@@ -10,6 +10,14 @@ class Config:
     _db = os.getenv("DATABASE_URL", "sqlite:///app.db")
     if _db.startswith("postgres://"):
         _db = _db.replace("postgres://", "postgresql://", 1)
+    # Si tenemos psycopg v3 instalado, forzar el driver 'psycopg' para evitar requerir psycopg2
+    try:
+        import psycopg  # noqa: F401
+        if _db.startswith("postgresql://") and "+" not in _db.split("://",1)[1].split(":",1)[0]:
+            # Reemplazar solo el esquema base sin duplicar si ya hay driver
+            _db = _db.replace("postgresql://", "postgresql+psycopg://", 1)
+    except Exception:
+        pass
     SQLALCHEMY_DATABASE_URI = _db
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
