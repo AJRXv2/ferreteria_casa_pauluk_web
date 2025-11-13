@@ -119,13 +119,22 @@ def create_app():
                     c = Category(name=name, slug=slugify(name))
                     db.session.add(c)
                 db.session.commit()
-            # Crear usuario admin por defecto en desarrollo si no existen usuarios
+            # Crear usuario admin por defecto (idempotente, tolerante a concurrencia)
             if inspect(db.engine).has_table("users"):
-                if not User.query.first():
-                    admin = User(username="admin", is_admin=True)
-                    admin.set_password("admin123")
-                    db.session.add(admin)
-                    db.session.commit()
+                try:
+                    from sqlalchemy.exc import IntegrityError
+                    exists = User.query.filter_by(username="admin").first()
+                    if not exists:
+                        admin = User(username="admin", is_admin=True)
+                        admin.set_password("admin123")
+                        db.session.add(admin)
+                        db.session.commit()
+                except IntegrityError:
+                    # Otro worker pudo crearlo en paralelo; ignorar
+                    try:
+                        db.session.rollback()
+                    except Exception:
+                        pass
             # Seed SiteInfo por defecto
             if inspect(db.engine).has_table("site_info") and SiteInfo.query.count() == 0:
                 info = SiteInfo(
