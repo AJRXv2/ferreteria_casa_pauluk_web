@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Productos</h3>
+  <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#bulkAdd" aria-expanded="false" aria-controls="bulkAdd">
+    <i class="bi bi-plus-lg me-1"></i> Añadir nuevos productos
+  </button>
+</div>
+
+<div class="collapse mb-4 {% if preview_rows %}show{% endif %}" id="bulkAdd">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title mb-3">Paso 1: datos base y cantidad</h5>
+  <form method="post" action="{{ url_for('main.products_admin_list') }}" class="row g-3" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="preview">
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Nombre</label>
+          <input type="text" class="form-control" name="name" placeholder="Ej: Mecha de acero" value="{{ (preview_rows and preview_rows[0].name) or '' }}" required>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">SKU</label>
+          <input type="text" class="form-control" name="sku" value="{{ (preview_rows and preview_rows[0].sku) or '' }}">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">Precio</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="text" class="form-control" name="price" value="{{ (preview_rows and preview_rows[0].price) or '' }}" placeholder="0,00">
+          </div>
+        </div>
+        <div class="col-6 col-lg-2 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="in_stock" id="base_in_stock" {% if not preview_rows or preview_rows[0].in_stock %}checked{% endif %}>
+            <label class="form-check-label" for="base_in_stock"> En stock </label>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">Categoría</label>
+          <select class="form-select" name="category_id">
+            <option value="">- Sin categoría -</option>
+            {% for root in roots %}
+              {% set children = root.children|sort(attribute='name') %}
+              {% if children %}
+                <optgroup label="{{ root.name }}">
+                  {% for sub in children %}
+                    <option value="{{ sub.id }}" {% if preview_rows and preview_rows[0].category_id == sub.id|string %}selected{% endif %}>{{ sub.name }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% else %}
+                <option value="{{ root.id }}" {% if preview_rows and preview_rows[0].category_id == root.id|string %}selected{% endif %}>{{ root.name }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">Marca</label>
+          <select class="form-select" name="brand_id">
+            <option value="">- Sin marca -</option>
+            {% for b in brands %}
+              <option value="{{ b.id }}" {% if preview_rows and preview_rows[0].brand_id and (preview_rows[0].brand_id|string) == (b.id|string) %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-3">
+          <label class="form-label">Multiplicar producto</label>
+          <input type="number" min="1" max="200" step="1" class="form-control" name="quantity" value="{{ preview_rows and preview_rows|length or 1 }}">
+          <div class="form-text">Se crearán X copias para editar individualmente en el próximo paso.</div>
+        </div>
+        <div class="col-12">
+          <div class="alert alert-info py-2 small mb-0">Formato de precio: usar coma para decimales (ej: 1.234,50).</div>
+        </div>
+        <div class="col-12 d-flex justify-content-end">
+          <button class="btn btn-primary" type="submit">Avanzar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if preview_rows %}
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Paso 2: revisá y editá cada producto</h5>
+  <form method="post" action="{{ url_for('main.products_admin_list') }}" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="save">
+      <input type="hidden" name="items_count" value="{{ preview_rows|length }}">
+      <div class="alert alert-info py-2 small">Formato de precio: utilizar coma para decimales (ej: 1.234,50).</div>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Nombre</th>
+              <th>SKU</th>
+              <th style="width: 130px">Precio</th>
+              <th>Stock</th>
+              <th>Marca</th>
+              <th>Categoría</th>
+              <th>Imagen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview_rows %}
+            {% set i = loop.index0 %}
+            <tr>
+              <td>
+                <input type="text" name="items[{{ i }}][name]" class="form-control" value="{{ row.name }}" required>
+              </td>
+              <td>
+                <input type="text" name="items[{{ i }}][sku]" class="form-control" value="{{ row.sku }}">
+              </td>
+              <td>
+                <div class="input-group">
+                  <span class="input-group-text">$</span>
+                  <input type="text" name="items[{{ i }}][price]" class="form-control" value="{{ row.price }}" placeholder="0,00">
+                </div>
+              </td>
+              <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="items[{{ i }}][in_stock]" {% if row.in_stock %}checked{% endif %}>
+              </td>
+              <td>
+                <select class="form-select" name="items[{{ i }}][brand_id]">
+                  <option value="" {% if not row.brand_id %}selected{% endif %}>- Sin marca -</option>
+                  {% for b in brands %}
+                    <option value="{{ b.id }}" {% if row.brand_id and (row.brand_id|string) == (b.id|string) %}selected{% endif %}>{{ b.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select class="form-select" name="items[{{ i }}][category_id]">
+                  <option value="" {% if not row.category_id %}selected{% endif %}>- Sin categoría -</option>
+                  {% for root in roots %}
+                    {% set children = root.children|sort(attribute='name') %}
+                    {% if children %}
+                      <optgroup label="{{ root.name }}">
+                        {% for sub in children %}
+                          <option value="{{ sub.id }}" {% if row.category_id and (row.category_id|string) == (sub.id|string) %}selected{% endif %}>{{ sub.name }}</option>
+                        {% endfor %}
+                      </optgroup>
+                    {% else %}
+                      <option value="{{ root.id }}" {% if row.category_id and (row.category_id|string) == (root.id|string) %}selected{% endif %}>{{ root.name }}</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <input type="file" name="image_{{ i }}" accept="image/*" class="form-control form-control-sm">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-end">
+        <button class="btn btn-success" type="submit">Guardar y publicar</button>
+      </div>
+    </form>
+  </div>
+ </div>
+{% endif %}
+
+<div class="table-responsive shadow-sm rounded">
+  <table class="table align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Nombre</th>
+        <th>SKU</th>
+        <th>Precio</th>
+        <th>Stock</th>
+        <th>Marca</th>
+        <th>Categoría</th>
+        <th style="width: 130px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p, c in products %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td>{{ p.sku or '-' }}</td>
+        <td>
+          {% if p.price %}
+            {{ p.price|ar_currency }}
+          {% else %}-{% endif %}
+        </td>
+        <td>
+          <span class="badge {% if p.in_stock %}bg-success{% else %}bg-danger{% endif %}">
+            {% if p.in_stock %}En stock{% else %}Sin stock{% endif %}
+          </span>
+        </td>
+        <td>{{ p.brand.name if p.brand else '-' }}</td>
+        <td>{{ c.name if c else '-' }}</td>
+        <td class="text-end">
+          <form class="d-inline" method="post" action="{{ url_for('main.products_admin_feature_toggle', product_id=p.id) }}">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            {% if p.featured %}
+              <button class="btn btn-sm btn-warning" type="submit" title="Quitar de destacados">Quitar dest.</button>
+            {% else %}
+              <button class="btn btn-sm btn-outline-warning" type="submit" title="Añadir a destacados">Destacar</button>
+            {% endif %}
+          </form>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.products_admin_edit', product_id=p.id) }}">Editar</a>
+          <form class="d-inline" method="post" action="{{ url_for('main.products_admin_delete', product_id=p.id) }}" onsubmit="return confirm('¿Eliminar producto?');">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="7" class="text-center text-muted">No hay productos aún.</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

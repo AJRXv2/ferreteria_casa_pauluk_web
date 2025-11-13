@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3 class="mb-3">{{ title }}</h3>
+<form method="post" action="{{ form_action }}">
+  <div class="row g-3">
+    <div class="col-12 col-md-6">
+      <label class="form-label">Nombre</label>
+      <input type="text" name="name" class="form-control" value="{{ product.name if product else '' }}" required>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label">SKU</label>
+      <input type="text" name="sku" class="form-control" value="{{ product.sku if product and product.sku else '' }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label">Precio</label>
+      <div class="input-group">
+        <span class="input-group-text">$</span>
+        <input type="text" name="price" class="form-control" value="{% if product and product.price %}{{ product.price|ar_number }}{% endif %}" placeholder="0,00">
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <label class="form-label">Categoría</label>
+      <select class="form-select" name="category_id">
+        <option value="" {% if not product or not product.category_id %}selected{% endif %}>- Sin categoría -</option>
+        {% for root in roots %}
+          {% set children = root.children|sort(attribute='name') %}
+          {% if children %}
+            <optgroup label="{{ root.name }}">
+              {% for sub in children %}
+                <option value="{{ sub.id }}" {% if product and product.category_id == sub.id %}selected{% endif %}>{{ sub.name }}</option>
+              {% endfor %}
+            </optgroup>
+          {% else %}
+            <option value="{{ root.id }}" {% if product and product.category_id == root.id %}selected{% endif %}>{{ root.name }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <label class="form-label">Marca</label>
+      <select class="form-select" name="brand_id">
+        <option value="" {% if not product or not product.brand_id %}selected{% endif %}>- Sin marca -</option>
+        {% for b in brands %}
+          <option value="{{ b.id }}" {% if product and product.brand_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 col-md-6 d-flex align-items-end">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" value="1" id="in_stock" name="in_stock" {% if not product or product.in_stock %}checked{% endif %}>
+        <label class="form-check-label" for="in_stock">
+          En stock
+        </label>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <label class="form-label">Imagen</label>
+      <input type="file" name="image" accept="image/*" class="form-control">
+      {% if product and product.image_filename %}
+        <div class="form-text">Imagen actual: <code>{{ product.image_filename }}</code></div>
+        <img src="{{ url_for('static', filename='img/products/' + product.image_filename) }}" alt="Imagen" class="img-thumbnail mt-2" style="max-height:140px;">
+      {% endif %}
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Descripción corta</label>
+      <input type="text" name="short_desc" class="form-control" value="{{ product.short_desc if product and product.short_desc else '' }}" maxlength="300">
+    </div>
+
+    <div class="col-12">
+      <label class="form-label">Descripción larga</label>
+      <textarea name="long_desc" class="form-control" rows="6">{{ product.long_desc if product and product.long_desc else '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.products_admin_list') }}">Cancelar</a>
+    <button class="btn btn-primary" type="submit">Guardar</button>
+  </div>
+</form>
+{% endblock %}

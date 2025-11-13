@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Detalle Consulta{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <a href="{{ url_for('main.consultas_admin_list') }}" class="btn btn-link mb-3">← Volver</a>
+  <h1 class="h4">Consulta de {{ consulta.nombre }}</h1>
+  <div class="mb-2 text-muted">Recibida: {{ consulta.created_at.strftime('%d/%m/%Y %H:%M') }}{% if consulta.read_at %} · Leída: {{ consulta.read_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}</div>
+  <dl class="row">
+    <dt class="col-sm-2">Email</dt><dd class="col-sm-10">{{ consulta.email }}</dd>
+    <dt class="col-sm-2">Teléfono</dt><dd class="col-sm-10">{{ consulta.telefono or '-' }}</dd>
+    <dt class="col-sm-2">Consulta</dt><dd class="col-sm-10"><pre class="mb-0" style="white-space:pre-wrap;">{{ consulta.consulta }}</pre></dd>
+    <dt class="col-sm-2">Adjuntos</dt>
+    <dd class="col-sm-10">
+      {% set imgs = [consulta.image1, consulta.image2, consulta.image3] | select | list %}
+      {% if imgs|length == 0 %}-{% else %}
+        <div class="d-flex flex-wrap gap-3">
+          {% for img in imgs %}
+            <div class="border p-2 text-center" style="width:160px;">
+              <a href="{{ url_for('static', filename='img/consultas/' ~ img) }}" target="_blank">
+                <img src="{{ url_for('static', filename='img/consultas/' ~ img) }}" alt="Adjunto" class="img-fluid" style="max-height:120px; object-fit:contain;" />
+              </a>
+              <div class="small mt-1">{{ img }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </dd>
+  </dl>
+  <form method="post" action="{{ url_for('main.consultas_admin_delete', consulta_id=consulta.id) }}" onsubmit="return confirm('¿Eliminar esta consulta?');" class="mt-4">
+    <button class="btn btn-danger">Eliminar</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Categorías</h3>
+  <a class="btn btn-primary" href="{{ url_for('main.categories_admin_new') }}">Nueva categoría</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-12">
+    <h5 class="mb-2">Categorías raíz</h5>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Slug</th>
+            <th style="width:50%">Subcategorías</th>
+            <th class="text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in roots %}
+          <tr>
+            <td>{{ c.name }}</td>
+            <td class="text-muted small">{{ c.slug }}</td>
+            <td>
+              {% if c.children %}
+                {% for sub in c.children|sort(attribute='name') %}
+                  <span class="badge text-bg-secondary me-1 mb-1">{{ sub.name }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.categories_admin_edit', category_id=c.id) }}">Editar</a>
+              <form method="post" action="{{ url_for('main.categories_admin_delete', category_id=c.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar categoría?');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="text-center text-muted">No hay categorías raíz.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <h5 class="mb-2">Subcategorías</h5>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Slug</th>
+            <th>Padre</th>
+            <th class="text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in subs %}
+          <tr>
+            <td>{{ s.name }}</td>
+            <td class="text-muted small">{{ s.slug }}</td>
+            <td>{{ s.parent.name if s.parent else '-' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.categories_admin_edit', category_id=s.id) }}">Editar</a>
+              <form method="post" action="{{ url_for('main.categories_admin_delete', category_id=s.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar subcategoría?');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="text-center text-muted">No hay subcategorías.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

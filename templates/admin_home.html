@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Panel de administración</h3>
+  <span class="text-muted">Usuario: {{ current_user.username }}</span>
+  </div>
+<div class="row g-3">
+  <div class="col-12 col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+  <h5 class="card-title">Categorías</h5>
+  <p class="card-text">Crear y organizar categorías y subcategorías.</p>
+  <a class="btn btn-outline-primary" href="{{ url_for('main.categories_admin_list') }}">Administrar</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="card-title">Productos</h5>
+        <p class="card-text">Alta, edición, stock y precio. Subida de imágenes.</p>
+        <a class="btn btn-outline-primary" href="{{ url_for('main.products_admin_list') }}">Administrar</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="card-title">Marcas</h5>
+        <p class="card-text">Crear, ocultar/mostrar y gestionar marcas.</p>
+        <a class="btn btn-outline-primary" href="{{ url_for('main.brands_admin_list') }}">Administrar</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="card-title">Importación</h5>
+        <p class="card-text">Carga masiva (CSV/Excel) y auto-clasificación.</p>
+        <a class="btn btn-outline-primary disabled" role="button" aria-disabled="true">Próximamente</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

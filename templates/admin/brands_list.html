@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Marcas</h3>
+  <a class="btn btn-primary" href="{{ url_for('main.brands_admin_new') }}">
+    <i class="bi bi-plus-lg me-1"></i> Nueva marca
+  </a>
+</div>
+
+<div class="table-responsive shadow-sm rounded">
+  <table class="table align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Nombre</th>
+        <th>Slug</th>
+        <th>Visible</th>
+        <th style="width: 220px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in brands %}
+      <tr>
+        <td>{{ b.name }}</td>
+        <td class="text-muted small">{{ b.slug }}</td>
+        <td>
+          {% if b.visible %}
+            <span class="badge bg-success">Sí</span>
+          {% else %}
+            <span class="badge bg-secondary">No</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.brands_admin_edit', brand_id=b.id) }}">Editar</a>
+          <form class="d-inline" method="post" action="{{ url_for('main.brands_admin_toggle', brand_id=b.id) }}">
+            <button class="btn btn-sm btn-outline-warning" type="submit">{% if b.visible %}Ocultar{% else %}Mostrar{% endif %}</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('main.brands_admin_delete', brand_id=b.id) }}" onsubmit="return confirm('¿Eliminar marca?');">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="text-center text-muted">No hay marcas aún.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

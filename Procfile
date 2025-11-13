@@ -1,0 +1,1 @@
+web: sh -c "flask db upgrade && gunicorn -w 3 -k gthread -b 0.0.0.0:$PORT ferreteria_web:app"

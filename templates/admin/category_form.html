@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h3 class="mb-3">{{ title }}</h3>
+  <form method="post" action="{{ form_action }}" id="category-form">
+    <div class="mb-3">
+      <label class="form-label">Nombre</label>
+      <input class="form-control" name="name" value="{{ category.name if category else '' }}" required>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label d-block">Padre (opcional)</label>
+      <input type="hidden" name="parent_id" id="parent_id" value="{{ category.parent_id if category else '' }}">
+      <div class="btn-group flex-wrap parent-picker" role="group" aria-label="Selector de padre">
+        <button type="button" class="btn btn-outline-secondary" data-parent-id="">Sin padre</button>
+        {% for root in roots %}
+          {% set has_children = root.children|length > 0 %}
+          <div class="dropdown dropdown-hover d-inline-block">
+            <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-parent-id="{{ root.id }}">{{ root.name }}</button>
+            {% if has_children %}
+              <ul class="dropdown-menu">
+                {% for sub in root.children %}
+                  <li><a class="dropdown-item" href="#" data-parent-id="{{ sub.id }}">{{ sub.name }}</a></li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="form-text">Hacé clic en una categoría raíz o en una subcategoría del menú desplegable.</div>
+      <div class="mt-2"><span class="badge text-bg-info" id="parent_selected_badge">{% if category and category.parent %}Padre: {{ category.parent.name }}{% else %}Sin padre{% endif %}</span></div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button class="btn btn-primary" type="submit">Guardar</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('main.categories_admin_list') }}">Cancelar</a>
+    </div>
+  </form>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function(){
+      const hiddenInput = document.getElementById('parent_id');
+      const badge = document.getElementById('parent_selected_badge');
+      function setParent(id, label){
+        hiddenInput.value = id || '';
+        badge.textContent = id ? ('Padre: ' + label) : 'Sin padre';
+      }
+      document.querySelectorAll('[data-parent-id]').forEach(el => {
+        el.addEventListener('click', function(ev){
+          ev.preventDefault();
+          const id = this.getAttribute('data-parent-id');
+          const label = this.textContent.trim();
+          setParent(id, label);
+        });
+      });
+    });
+  </script>
+{% endblock %}

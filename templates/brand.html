@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block content %}
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+      {% for label, href in breadcrumbs %}
+        {% if href %}
+          <li class="breadcrumb-item"><a href="{{ href }}">{{ label }}</a></li>
+        {% else %}
+          <li class="breadcrumb-item active" aria-current="page">{{ label }}</li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  </nav>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="mb-0">Marca: {{ brand.name }}</h2>
+    <a href="{{ url_for('main.brands_public_list') }}" class="btn btn-sm btn-outline-secondary">Todas las marcas</a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-3">
+      <form class="filters-sidebar position-sticky top-0" style="z-index: 1;" method="get">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Buscar dentro de la marca</label>
+              <input class="form-control" type="text" name="q" value="{{ q }}" placeholder="Nombre, descripción, SKU">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Categoría</label>
+              <select class="form-select" name="category_id">
+                <option value="">Todas</option>
+                {% for c in categories %}
+                  <option value="{{ c.id }}" {% if category_id and (category_id|string)==(c.id|string) %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Disponibilidad</label>
+              <select class="form-select" name="stock">
+                <option value="" {% if not stock %}selected{% endif %}>Cualquiera</option>
+                <option value="in" {% if stock=='in' %}selected{% endif %}>Solo en stock</option>
+                <option value="out" {% if stock=='out' %}selected{% endif %}>Solo sin stock</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Precio</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="text" class="form-control" name="pmin" placeholder="mín" value="{{ pmin }}">
+                <span class="input-group-text">a</span>
+                <input type="text" class="form-control" name="pmax" placeholder="máx" value="{{ pmax }}">
+              </div>
+              <div class="form-text">Formato 1.234,56 (opcional)</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Por página</label>
+              <select class="form-select" name="per_page">
+                {% for n in [10,20,50] %}
+                  <option value="{{ n }}" {% if per_page==n %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary w-100" type="submit">Aplicar filtros</button>
+              {% if q or category_id or stock or pmin or pmax %}
+                <a class="btn btn-outline-secondary" href="{{ url_for('main.brand_page', slug=brand.slug) }}">Limpiar</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="col-12 col-lg-9">
+      {% if total == 0 %}
+        <p class="text-muted">No se encontraron productos.</p>
+      {% else %}
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+          <div class="text-muted">Mostrando {{ ((page-1)*per_page)+1 }}–{{ ((page-1)*per_page)+products|length }} de {{ total }}</div>
+          {% if pages > 1 %}
+            <div class="d-flex align-items-center gap-2">
+              <nav aria-label="Paginación marca">
+                <ul class="pagination pagination-sm mb-0">
+                  {% set prev_page = page-1 %}
+                  {% set next_page = page+1 %}
+                  <li class="page-item {% if page==1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.brand_page', slug=brand.slug, q=q, category_id=category_id, stock=stock, pmin=pmin, pmax=pmax, per_page=per_page, page=1) }}">«</a>
+                  </li>
+                  <li class="page-item {% if page==1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.brand_page', slug=brand.slug, q=q, category_id=category_id, stock=stock, pmin=pmin, pmax=pmax, per_page=per_page, page=prev_page) }}">Anterior</a>
+                  </li>
+                  {% for p in range(1, pages+1) %}
+                    <li class="page-item {% if p==page %}active{% endif %}">
+                      <a class="page-link" href="{{ url_for('main.brand_page', slug=brand.slug, q=q, category_id=category_id, stock=stock, pmin=pmin, pmax=pmax, per_page=per_page, page=p) }}">{{ p }}</a>
+                    </li>
+                  {% endfor %}
+                  <li class="page-item {% if page==pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.brand_page', slug=brand.slug, q=q, category_id=category_id, stock=stock, pmin=pmin, pmax=pmax, per_page=per_page, page=next_page) }}">Siguiente</a>
+                  </li>
+                  <li class="page-item {% if page==pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('main.brand_page', slug=brand.slug, q=q, category_id=category_id, stock=stock, pmin=pmin, pmax=pmax, per_page=per_page, page=pages) }}">»</a>
+                  </li>
+                </ul>
+              </nav>
+              <form class="d-flex align-items-center gap-1" method="get">
+                <input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="category_id" value="{{ category_id }}">
+                <input type="hidden" name="stock" value="{{ stock }}">
+                <input type="hidden" name="pmin" value="{{ pmin }}">
+                <input type="hidden" name="pmax" value="{{ pmax }}">
+                <input type="hidden" name="per_page" value="{{ per_page }}">
+                <label class="small text-muted">Ir a</label>
+                <input class="form-control form-control-sm" type="number" name="page" min="1" max="{{ pages }}" value="{{ page }}" style="width: 80px;">
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Ir</button>
+              </form>
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="row g-3">
+          {% for p in products %}
+          <div class="col-12 col-md-6 col-lg-3">
+            <div class="card hoverable h-100 border-0 shadow-sm" data-product-id="{{ p.id }}">
+              <div class="ratio ratio-4x3 bg-light">
+                {% if p.image_filename %}
+                  <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
+                {% else %}
+                  <div class="d-flex align-items-center justify-content-center w-100 h-100 text-muted">
+                    <i class="bi bi-tools" style="font-size: 3rem;"></i>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="card-body">
+                <h6 class="card-title text-truncate" title="{{ p.name }}">{{ p.name }}</h6>
+                <p class="text-muted small mb-1">SKU: {{ p.sku or '-' }}</p>
+                {% if p.price %}<p class="fw-semibold">{{ p.price|ar_currency }}</p>{% endif %}
+                <span class="badge {% if p.in_stock %}bg-success{% else %}bg-danger{% endif %}">{% if p.in_stock %}En stock{% else %}Sin stock{% endif %}</span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Slides del inicio</h3>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#bulkUpload" aria-expanded="false" aria-controls="bulkUpload">
+      <i class="bi bi-cloud-upload me-1"></i> Cargar múltiples
+    </button>
+    <a class="btn btn-primary" href="{{ url_for('main.slides_admin_new') }}">
+      <i class="bi bi-plus-lg me-1"></i> Nuevo slide
+    </a>
+  </div>
+</div>
+
+<div class="collapse mb-3" id="bulkUpload">
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h6 class="card-title mb-2">Subir varias imágenes</h6>
+      <p class="text-muted small mb-3">Se agregarán al final respetando el orden actual. Formatos: JPG, PNG, WEBP.</p>
+      <form method="post" action="{{ url_for('main.slides_admin_bulk') }}" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
+        <input class="form-control" type="file" name="images" accept="image/*" multiple required>
+        <button class="btn btn-success" type="submit"><i class="bi bi-check2 me-1"></i> Subir</button>
+      </form>
+    </div>
+  </div>
+  </div>
+
+<div class="table-responsive shadow-sm rounded">
+  <table class="table align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Orden</th>
+        <th>Imagen</th>
+        <th>Visible</th>
+        <th style="width: 240px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in slides %}
+      <tr>
+        <td><span class="badge text-bg-secondary">{{ s.order }}</span></td>
+        <td>
+          <img src="{{ url_for('static', filename='img/slides/' + s.image_filename) }}" alt="slide" class="rounded" style="height:80px;object-fit:cover;">
+        </td>
+        <td>
+          {% if s.visible %}
+            <span class="badge bg-success">Sí</span>
+          {% else %}
+            <span class="badge bg-secondary">No</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.slides_admin_edit', slide_id=s.id) }}">Editar</a>
+          <form class="d-inline" method="post" action="{{ url_for('main.slides_admin_toggle', slide_id=s.id) }}">
+            <button class="btn btn-sm btn-outline-warning" type="submit">{% if s.visible %}Ocultar{% else %}Mostrar{% endif %}</button>
+          </form>
+          <form class="d-inline" method="post" action="{{ url_for('main.slides_admin_delete', slide_id=s.id) }}" onsubmit="return confirm('¿Eliminar slide?');">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="text-center text-muted">No hay slides aún.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

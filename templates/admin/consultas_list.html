@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Consultas - Admin{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Consultas recibidas</h1>
+    <form method="post" action="{{ url_for('main.consultas_toggle') }}">
+      <input type="hidden" name="_action" value="toggle">
+      {% if consultas_enabled %}
+        <button class="btn btn-sm btn-outline-danger" title="Deshabilitar consultas">Deshabilitar</button>
+      {% else %}
+        <button class="btn btn-sm btn-outline-success" title="Habilitar consultas">Habilitar</button>
+      {% endif %}
+    </form>
+  </div>
+  {% if consultas|length == 0 %}
+    <div class="alert alert-info">No hay consultas registradas todavía.</div>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Fecha</th>
+          <th>Nombre</th>
+          <th>Email</th>
+          <th>Teléfono</th>
+          <th>Adjuntos</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in consultas %}
+        <tr class="{% if c.read_at is none %}table-warning{% endif %}">
+          <td>{{ c.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ c.nombre }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.telefono or '-' }}</td>
+          <td>
+            {% set adj = [c.image1, c.image2, c.image3] | select | list %}
+            {% if adj|length == 0 %}-{% else %}{{ adj|length }}{% endif %}
+          </td>
+          <td>{% if c.read_at %}<span class="text-success">Leída</span>{% else %}<strong>Nueva</strong>{% endif %}</td>
+          <td><a class="btn btn-sm btn-primary" href="{{ url_for('main.consultas_admin_detail', consulta_id=c.id) }}">Ver</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

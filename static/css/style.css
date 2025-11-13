@@ -1,0 +1,197 @@
+/* Estilos mínimos para dar un toque visual */
+/* Tema y acentos */
+:root {
+	--brand-accent: #F57C00;
+	--brand-accent-rgb: 245,124,0;
+	/* Sobrescribe el primary de Bootstrap para botones, badges, etc. */
+	--bs-primary: var(--brand-accent);
+	--bs-primary-rgb: 245,124,0;
+}
+
+body { background: #f8f9fa; }
+/* Barra informativa superior */
+.info-bar { font-size: .75rem; background: #0d6efd; color: #fff; padding: .25rem .75rem; display: flex; gap: 1rem; align-items: center; }
+.info-bar .status-open { color: #8ef18e; font-weight: 600; }
+.info-bar .status-closed { color: #ffc2c2; font-weight: 600; }
+.home-bg {
+	/* Degradado vertical cálido */
+	background: linear-gradient(180deg, #F57C00 0%, #FF9800 45%, #FFE0B2 100%);
+	min-height: 100vh;
+}
+.home-bg main, .home-bg .card, .home-bg .bg-light { color: #111; }
+.home-bg main { color: #111; }
+.home-bg .card { background: #fff; }
+/* navbar queda oscuro por defecto; no se requiere cambio específico */
+.navbar-brand { font-weight: 700; }
+.brand-logo { height: 90px; width: auto; display: inline-block; }
+
+/* Aumentar tamaño del texto de marca */
+.navbar-brand span { font-size: 1.75rem; line-height: 1.1; }
+@media (max-width: 576px) {
+	.navbar-brand span { font-size: 1.4rem; }
+}
+
+/* Pestañas del navbar más grandes y con recuadro semitransparente (solo nivel superior) */
+.navbar .navbar-nav > .nav-item { margin: 0 .125rem; }
+.navbar .navbar-nav > .nav-item > .nav-link {
+	font-weight: 700;
+	font-size: 1.1rem; /* un poquito más grande */
+	padding: .35rem .75rem;
+	border-radius: .75rem;
+	background-color: rgba(255, 255, 255, .65); /* semitransparente para que se vean los logos */
+	border: 1px solid rgba(0, 0, 0, .06);
+	display: inline-block;
+}
+.navbar .navbar-nav > .nav-item > .nav-link:hover,
+.navbar .navbar-nav > .nav-item > .nav-link:focus {
+	background-color: rgba(255, 255, 255, .85);
+	border-color: rgba(var(--brand-accent-rgb), .4);
+	color: #111;
+	box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+@media (max-width: 576px) {
+	.navbar .navbar-nav > .nav-item > .nav-link {
+		font-size: 1rem;
+		padding: .4rem .6rem;
+	}
+}
+
+/* En pantallas chicas, un poco más chica para que no rompa el layout */
+@media (max-width: 576px) {
+	.brand-logo { height: 40px; }
+}
+.card { transition: transform .15s ease, box-shadow .15s ease; }
+.card.hoverable:hover { transform: translateY(-4px); box-shadow: 0 .75rem 1.5rem rgba(0,0,0,.15); }
+
+/* Dropdown al pasar el mouse en escritorio */
+/* Breadcrumbs */
+.breadcrumb { --bs-breadcrumb-divider: '›'; font-size: .85rem; }
+
+/* Filtros sidebar */
+.filters-sidebar { position: sticky; top: 1rem; }
+.filters-sidebar .card { border: 1px solid #e3e6e9; }
+
+/* Recently viewed */
+.recently-viewed-wrapper { overflow-x: auto; display: flex; gap: .75rem; padding-bottom: .5rem; }
+.recently-viewed-item { flex: 0 0 140px; text-align: center; font-size: .75rem; }
+.recently-viewed-item img { max-height: 90px; object-fit: cover; border-radius: .25rem; }
+.dropdown-hover:hover > .dropdown-menu { display: block; margin-top: 0; }
+.categories-menu .nav-link { border-radius: 999px; }
+.categories-menu .dropdown-menu { margin-top: .25rem; }
+.dropdown-hover > .nav-link + .dropdown-menu, .dropdown-hover > .btn + .dropdown-menu { min-width: 20rem; }
+.dropdown-hover > a::after { content: "\25BE"; /* ▾ */ margin-left: .35rem; font-size: .8rem; opacity: .8; }
+
+/* Dropdowns anidados en navbar (subcategorías) */
+.dropdown-submenu { position: relative; }
+.dropdown-submenu > .dropdown-menu { top: 0; left: 100%; margin-left: .1rem; min-width: 18rem; }
+.dropdown-submenu > a::after { content: "\203A"; float: right; opacity: .6; } /* › */
+/* Abrir submenú al pasar el mouse en pantallas con hover */
+@media (hover: hover) {
+	.dropdown-submenu:hover > .dropdown-menu { display: block; }
+}
+
+/* Acentos suaves para botones y estados */
+.btn-primary {
+	background-color: var(--brand-accent);
+	border-color: var(--brand-accent);
+}
+.btn-primary:hover, .btn-primary:focus {
+	background-color: #e56f00;
+	border-color: #e56f00;
+}
+
+/* Pills de categorías: resaltar al hover con el acento */
+.categories-menu .nav-link:hover {
+	color: var(--brand-accent);
+	border-color: var(--brand-accent);
+	background-color: rgba(var(--brand-accent-rgb), .06);
+}
+
+/* Items del dropdown con leve highlight */
+.navbar .dropdown-menu { font-size: 1.12rem; padding: .7rem 0; }
+.navbar .dropdown-item { padding: .7rem 1.05rem; font-weight: 700; }
+.dropdown-menu .dropdown-item:hover, .dropdown-menu .dropdown-item:focus {
+	background-color: rgba(var(--brand-accent-rgb), .08);
+}
+
+/* Indicadores del carrusel con acento */
+.carousel-indicators [data-bs-target] {
+	background-color: rgba(var(--brand-accent-rgb), .45);
+}
+.carousel-indicators .active {
+	background-color: var(--brand-accent);
+}
+
+/* Badges de utilidad */
+.badge-accent { background-color: var(--brand-accent); }
+
+/* Patrón de marcas como fondo en navbar */
+.navbar-pattern {
+	background-image: url('/brand-pattern.svg');
+	background-repeat: repeat;
+	/* Escalar el tile para que su altura coincida con la barra y se vean todas las filas */
+	background-size: auto 100%;
+	background-position: center top;
+}
+
+/* Carousel home más alto */
+.home-carousel img {
+  height: 450px;
+  object-fit: cover;
+}
+@media (max-width: 768px) {
+  .home-carousel img { height: 320px; }
+}
+
+/* Scroller horizontal para "Últimos productos" */
+.product-scroller {
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	padding-left: .25rem;
+	padding-right: .25rem;
+}
+.product-scroller > * {
+	scroll-snap-align: start;
+}
+.scroller-btn {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	background: rgba(255,255,255,.9);
+	box-shadow: 0 2px 8px rgba(0,0,0,.15);
+	border: 1px solid rgba(0,0,0,.08);
+	z-index: 3;
+}
+.scroller-btn-left { left: -0.5rem; }
+.scroller-btn-right { right: -0.5rem; }
+@media (max-width: 576px) {
+	.scroller-btn-left { left: .25rem; }
+	.scroller-btn-right { right: .25rem; }
+}
+
+/* Panel información del local */
+.site-info-panel {
+	background: linear-gradient(135deg, #004D40 0%, #00695C 60%, #00897B 100%);
+	color: #fff;
+	position: relative;
+	overflow: hidden;
+}
+.site-info-panel h2, .site-info-panel dt { color: #fff; }
+.site-info-panel dd { margin-bottom: .6rem; }
+.site-name { font-size: clamp(2.4rem, 6vw, 3.6rem); letter-spacing: .5px; }
+.site-info-dl dt { font-size: .95rem; text-transform: uppercase; letter-spacing: .5px; }
+.site-info-dl dd { font-size: 1.08rem; }
+.site-info-panel i.bi { font-size: 1.1rem; opacity: .85; }
+.site-info-panel::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(circle at top right, rgba(255,255,255,.12), transparent 60%);
+	pointer-events: none;
+}
+.site-info-panel .form-control, .site-info-panel .form-control:focus {
+	background-color: rgba(255,255,255,.9);
+	color: #111;
+}
+.site-info-panel .btn-outline-light { border-color: rgba(255,255,255,.7); color: #fff; }
+.site-info-panel .btn-outline-light:hover { background: rgba(255,255,255,.15); }

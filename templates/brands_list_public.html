@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2 class="mb-3">Marcas</h2>
+  {% if brands|length == 0 %}
+    <p class="text-muted">No hay marcas activas.</p>
+  {% else %}
+    <div class="row g-3">
+      {% for b in brands %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <a href="{{ url_for('main.brand_page', slug=b.slug) }}" class="card hoverable text-decoration-none h-100">
+          <div class="card-body p-2 d-flex flex-column justify-content-center align-items-center">
+            <div class="fw-semibold text-center mb-1">{{ b.name }}</div>
+            <small class="text-muted">Ver productos</small>
+          </div>
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

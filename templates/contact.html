@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2 class="mb-3">Contacto</h2>
+  <div class="site-info-panel p-4 rounded-4 shadow-lg">
+    <div class="row g-4 align-items-center">
+      <div class="col-12 col-lg-4 text-center">
+        <img src="/logoferreteria.png" alt="Logo" class="img-fluid mb-3" style="max-height:180px;">
+        <h3 class="site-name fw-bold mb-0">{{ site_info.store_name if site_info else 'Ferretería Casa Pauluk' }}</h3>
+      </div>
+      <div class="col-12 col-lg-8">
+        <dl class="row mb-0 site-info-dl">
+          <dt class="col-sm-3"><i class="bi bi-geo-alt-fill me-2"></i>Dirección</dt>
+          <dd class="col-sm-9">{{ site_info.address if site_info and site_info.address else 'Moreno 199, Tres Isletas, Chaco, Argentina' }}</dd>
+          <dt class="col-sm-3"><i class="bi bi-clock-fill me-2"></i>Horarios</dt>
+          <dd class="col-sm-9">{{ site_info.hours if site_info and site_info.hours else 'Lunes a Viernes: 08:00-12:00 / 16:00-20:00 | Sábados: 08:00-12:30 / 16:30-20:00' }}</dd>
+          <dt class="col-sm-3"><i class="bi bi-envelope-fill me-2"></i>Email</dt>
+          <dd class="col-sm-9">
+            {% if site_info and site_info.email %}
+              <a class="text-decoration-none text-light" href="mailto:{{ site_info.email }}">{{ site_info.email }}</a>
+            {% else %}A definir{% endif %}
+          </dd>
+          <dt class="col-sm-3"><i class="bi bi-telephone-fill me-2"></i>Teléfono</dt>
+          <dd class="col-sm-9">
+            {% if site_info and site_info.phone %}
+              <a class="text-decoration-none text-light" href="tel:{{ site_info.phone|replace(' ', '')|replace('-', '') }}">{{ site_info.phone }}</a>
+            {% else %}A definir{% endif %}
+          </dd>
+          <dt class="col-sm-3"><i class="bi bi-instagram me-2"></i>Instagram</dt>
+          <dd class="col-sm-9">
+            {% if site_info and site_info.instagram %}
+              <a class="text-decoration-none text-light" href="https://instagram.com/{{ site_info.instagram.lstrip('@') }}" target="_blank" rel="noopener">{{ site_info.instagram }}</a>
+            {% else %}A definir{% endif %}
+          </dd>
+          <dt class="col-sm-3"><i class="bi bi-whatsapp me-2"></i>WhatsApp</dt>
+          <dd class="col-sm-9">
+            {% if site_info and site_info.whatsapp %}
+              {% set wa_digits = site_info.whatsapp|replace(' ', '')|replace('-', '') %}
+              <a class="text-decoration-none text-light" href="https://wa.me/{{ wa_digits }}" target="_blank" rel="noopener">{{ site_info.whatsapp }}</a>
+            {% else %}A definir{% endif %}
+          </dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+{% endblock %}

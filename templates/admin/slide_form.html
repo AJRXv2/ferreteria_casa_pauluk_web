@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3 class="mb-3">{{ title }}</h3>
+<form method="post" action="{{ form_action }}" enctype="multipart/form-data" class="row g-3">
+  <div class="col-12 col-md-6">
+    <label class="form-label">Imagen</label>
+    <input type="file" class="form-control" name="image" accept="image/*" {% if not slide %}required{% endif %}>
+    <div class="form-text">Formatos permitidos: JPG, PNG, WEBP. Tamaño recomendado: 1600x600 aprox.</div>
+    {% if slide %}
+      <img src="{{ url_for('static', filename='img/slides/' + slide.image_filename) }}" class="img-thumbnail mt-2" style="max-height:180px;object-fit:cover;">
+    {% endif %}
+  </div>
+  <div class="col-6 col-md-2">
+    <label class="form-label">Orden</label>
+    <input type="number" class="form-control" name="order" value="{{ slide.order if slide else 0 }}" step="1">
+  </div>
+  <div class="col-6 col-md-4 d-flex align-items-end">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="visible" id="visible" {% if not slide or slide.visible %}checked{% endif %}>
+      <label for="visible" class="form-check-label">Visible</label>
+    </div>
+  </div>
+  <div class="col-12">
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.slides_admin_list') }}">Cancelar</a>
+    <button class="btn btn-primary" type="submit">Guardar</button>
+  </div>
+</form>
+{% endblock %}

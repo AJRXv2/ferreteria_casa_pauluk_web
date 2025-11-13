@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% block body_class %}home-bg{% endblock %}
+{% block content %}
+<div class="mb-4" id="recentlyViewed">
+  <h5 class="mb-2">Vistos recientemente</h5>
+</div>
+
+<div id="homeCarousel" class="carousel slide mb-4" data-bs-ride="carousel">
+  <div class="carousel-inner rounded-3 overflow-hidden home-carousel">
+    {% for s in slides %}
+      <div class="carousel-item {% if loop.first %}active{% endif %}">
+        <img src="{{ url_for('static', filename='img/slides/' + s.image_filename) }}" class="d-block w-100" alt="Slide {{ loop.index }}">
+      </div>
+    {% else %}
+      <div class="carousel-item active">
+        <img src="https://picsum.photos/1600/450?random=1" class="d-block w-100" alt="Slide">
+      </div>
+    {% endfor %}
+  </div>
+  <button class="carousel-control-prev" type="button" data-bs-target="#homeCarousel" data-bs-slide="prev">
+    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+    <span class="visually-hidden">Anterior</span>
+  </button>
+  <button class="carousel-control-next" type="button" data-bs-target="#homeCarousel" data-bs-slide="next">
+    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+    <span class="visually-hidden">Siguiente</span>
+  </button>
+  {% if slides and slides|length > 1 %}
+    <div class="carousel-indicators">
+      {% for s in slides %}
+        <button type="button" data-bs-target="#homeCarousel" data-bs-slide-to="{{ loop.index0 }}" class="{% if loop.first %}active{% endif %}" aria-label="Slide {{ loop.index }}" {% if loop.first %}aria-current="true"{% endif %}></button>
+      {% endfor %}
+    </div>
+  {% endif %}
+  </div>
+
+{# Se removió la grilla de categorías a pedido: solo queda la barra superior #}
+
+{% if featured_products and featured_products|length > 0 %}
+<h2 class="mb-3">Productos destacados</h2>
+<div id="featuredCarousel" class="carousel slide mb-4" data-bs-ride="carousel">
+  <div class="carousel-inner">
+    {% set step = 4 %}
+    {% for i in range(0, featured_products|length, step) %}
+      <div class="carousel-item {% if loop.first %}active{% endif %}">
+        <div class="row g-3 justify-content-center">
+          {% for p in featured_products[i:i+step] %}
+            <div class="col-4 col-lg-3 {% if loop.index == 4 %}d-none d-lg-block{% endif %}">
+              <div class="card h-100 border-0 shadow-sm hoverable" data-product-id="{{ p.id }}">
+                <div class="ratio ratio-4x3 bg-light">
+                  {% if p.image_filename %}
+                    <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
+                  {% else %}
+                    <div class="d-flex align-items-center justify-content-center w-100 h-100 text-muted">
+                      <i class="bi bi-tools" style="font-size: 3rem;"></i>
+                    </div>
+                  {% endif %}
+                </div>
+                <div class="card-body text-center">
+                  <h6 class="card-title mb-1">{{ p.name }}</h6>
+                  {% if p.price %}
+                    <div class="fw-semibold">{{ p.price|ar_currency }}</div>
+                  {% endif %}
+                  {% if current_user.is_authenticated and current_user.is_admin %}
+                    <form class="mt-2" method="post" action="{{ url_for('main.products_admin_feature_toggle', product_id=p.id) }}">
+                      <input type="hidden" name="next" value="{{ request.path }}">
+                      <button class="btn btn-sm btn-warning" type="submit">Quitar de destacados</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% if featured_products|length > 4 %}
+  <button class="carousel-control-prev" type="button" data-bs-target="#featuredCarousel" data-bs-slide="prev">
+    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+    <span class="visually-hidden">Anterior</span>
+  </button>
+  <button class="carousel-control-next" type="button" data-bs-target="#featuredCarousel" data-bs-slide="next">
+    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+    <span class="visually-hidden">Siguiente</span>
+  </button>
+  <div class="carousel-indicators">
+    {% for _ in range(0, featured_products|length, step) %}
+      <button type="button" data-bs-target="#featuredCarousel" data-bs-slide-to="{{ loop.index0 }}" class="{% if loop.first %}active{% endif %}" {% if loop.first %}aria-current="true"{% endif %} aria-label="Slide {{ loop.index }}"></button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2 class="mb-3">Últimos productos</h2>
+<div class="position-relative">
+  <button id="latestPrev" class="btn btn-light scroller-btn scroller-btn-left" type="button" aria-label="Anterior">
+    <i class="bi bi-chevron-left"></i>
+  </button>
+  <div id="latestScroller" class="product-scroller d-flex gap-3 pb-2">
+    {% for p in products %}
+      <div class="card h-100 border-0 shadow-sm flex-shrink-0 hoverable" style="width: 16rem;" data-product-id="{{ p.id }}">
+        <div class="ratio ratio-4x3 bg-light">
+                  {% if p.image_filename %}
+                    <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
+                  {% else %}
+                    <div class="d-flex align-items-center justify-content-center w-100 h-100 text-muted">
+                      <i class="bi bi-tools" style="font-size: 3rem;"></i>
+                    </div>
+                  {% endif %}
+        </div>
+        <div class="card-body">
+          <h6 class="card-title">{{ p.name }}</h6>
+          <p class="text-muted small mb-1">SKU: {{ p.sku or '-' }}</p>
+          {% if p.price %}
+          <p class="fw-semibold">{{ p.price|ar_currency }}</p>
+          {% endif %}
+          <span class="badge {% if p.in_stock %}bg-success{% else %}bg-danger{% endif %}">
+            {% if p.in_stock %}En stock{% else %}Sin stock{% endif %}
+          </span>
+          {% if current_user.is_authenticated and current_user.is_admin %}
+            <div class="mt-2 d-flex gap-2">
+              <a href="{{ url_for('main.products_admin_edit', product_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+              <form method="post" action="{{ url_for('main.products_admin_feature_toggle', product_id=p.id) }}">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                {% if p.featured %}
+                  <button class="btn btn-sm btn-warning" type="submit" title="Quitar de destacados">Quitar dest.</button>
+                {% else %}
+                  <button class="btn btn-sm btn-outline-warning" type="submit" title="Añadir a destacados">Destacar</button>
+                {% endif %}
+              </form>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="text-muted">Todavía no hay productos cargados.</p>
+    {% endfor %}
+  </div>
+  <button id="latestNext" class="btn btn-light scroller-btn scroller-btn-right" type="button" aria-label="Siguiente">
+    <i class="bi bi-chevron-right"></i>
+  </button>
+</div>
+
+<div class="site-info-panel mt-5 mb-4 p-4 rounded-4 shadow-lg">
+  <div class="row g-4 align-items-center">
+    <div class="col-12 col-lg-4 text-center">
+      <img src="/logoferreteria.png" alt="Logo" class="img-fluid mb-3" style="max-height:200px;">
+      <h2 class="site-name fw-bold mb-0">{{ site_info.store_name if site_info else 'Ferretería Casa Pauluk' }}</h2>
+    </div>
+    <div class="col-12 col-lg-8">
+      <dl class="row mb-0 site-info-dl">
+        <dt class="col-sm-3"><i class="bi bi-geo-alt-fill me-2"></i>Dirección</dt>
+        <dd class="col-sm-9">{{ site_info.address if site_info and site_info.address else 'Moreno 199, Tres Isletas, Chaco, Argentina' }}</dd>
+        <dt class="col-sm-3"><i class="bi bi-clock-fill me-2"></i>Horarios</dt>
+        <dd class="col-sm-9">{{ site_info.hours if site_info and site_info.hours else 'Lunes a Viernes: 08:00-12:00 / 16:00-20:00 | Sábados: 08:00-12:30 / 16:30-20:00' }}</dd>
+        <dt class="col-sm-3"><i class="bi bi-envelope-fill me-2"></i>Email</dt>
+        <dd class="col-sm-9">
+          {% if site_info and site_info.email %}
+            <a class="text-decoration-none text-light" href="mailto:{{ site_info.email }}">{{ site_info.email }}</a>
+          {% else %}A definir{% endif %}
+        </dd>
+        <dt class="col-sm-3"><i class="bi bi-telephone-fill me-2"></i>Teléfono</dt>
+        <dd class="col-sm-9">
+          {% if site_info and site_info.phone %}
+            <a class="text-decoration-none text-light" href="tel:{{ site_info.phone|replace(' ', '')|replace('-', '') }}">{{ site_info.phone }}</a>
+          {% else %}A definir{% endif %}
+        </dd>
+        <dt class="col-sm-3"><i class="bi bi-instagram me-2"></i>Instagram</dt>
+        <dd class="col-sm-9">
+          {% if site_info and site_info.instagram %}
+            <a class="text-decoration-none text-light" href="https://instagram.com/{{ site_info.instagram.lstrip('@') }}" target="_blank" rel="noopener">{{ site_info.instagram }}</a>
+          {% else %}A definir{% endif %}
+        </dd>
+        <dt class="col-sm-3"><i class="bi bi-whatsapp me-2"></i>WhatsApp</dt>
+        <dd class="col-sm-9">
+          {% if site_info and site_info.whatsapp %}
+            {% set wa_digits = site_info.whatsapp|replace(' ', '')|replace('-', '') %}
+            <a class="text-decoration-none text-light" href="https://wa.me/{{ wa_digits }}" target="_blank" rel="noopener">{{ site_info.whatsapp }}</a>
+          {% else %}A definir{% endif %}
+        </dd>
+      </dl>
+
+      {% if current_user.is_authenticated and current_user.is_admin %}
+      <div class="mt-3">
+        <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="collapse" data-bs-target="#editSiteInfo" aria-expanded="false" aria-controls="editSiteInfo">
+          Editar información
+        </button>
+      </div>
+      <div class="collapse mt-3" id="editSiteInfo">
+        <div class="card bg-dark bg-opacity-50 border-0">
+          <div class="card-body">
+            <form method="post" action="{{ url_for('main.site_info_update') }}" class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label text-light">Nombre del local</label>
+                <input type="text" name="store_name" class="form-control form-control-sm" value="{{ site_info.store_name if site_info else '' }}" placeholder="Ferretería Casa Pauluk" required>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label text-light">Dirección</label>
+                <input type="text" name="address" class="form-control form-control-sm" value="{{ site_info.address if site_info else '' }}" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label text-light">Horarios</label>
+                <input type="text" name="hours" class="form-control form-control-sm" value="{{ site_info.hours if site_info else '' }}" required>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label text-light">Email</label>
+                <input type="text" name="email" class="form-control form-control-sm" value="{{ site_info.email if site_info and site_info.email else '' }}" placeholder="">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label text-light">Teléfono</label>
+                <input type="text" name="phone" class="form-control form-control-sm" value="{{ site_info.phone if site_info and site_info.phone else '' }}" placeholder="">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label text-light">Instagram</label>
+                <input type="text" name="instagram" class="form-control form-control-sm" value="{{ site_info.instagram if site_info and site_info.instagram else '' }}" placeholder="@usuario">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label text-light">WhatsApp</label>
+                <input type="text" name="whatsapp" class="form-control form-control-sm" value="{{ site_info.whatsapp if site_info and site_info.whatsapp else '' }}" placeholder="Ej: 5493624123456">
+              </div>
+              <div class="col-12 d-flex justify-content-end">
+                <button class="btn btn-primary btn-sm" type="submit">Guardar cambios</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

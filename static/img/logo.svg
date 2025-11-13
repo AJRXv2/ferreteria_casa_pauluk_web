@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" role="img" aria-labelledby="title">
+  <title>Ferretería "Casa Pauluk"</title>
+  <defs>
+    <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#F57C00"/>
+      <stop offset="100%" stop-color="#FF9800"/>
+    </linearGradient>
+  </defs>
+  <rect rx="16" ry="16" x="6" y="6" width="108" height="108" fill="url(#g)" stroke="#222" stroke-width="4"/>
+  <g fill="#fff" transform="translate(18,20)">
+    <path d="M21 23l7-7 3 3-7 7 3 3 10-10-6-6 3-3 9 9-16 16-9-9 3-3z"/>
+    <path d="M54 23l7-7 3 3-7 7 3 3 10-10-6-6 3-3 9 9-16 16-9-9 3-3z"/>
+  </g>
+  <text x="60" y="78" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="14" fill="#111">CASA PAULUK</text>
+  <text x="60" y="95" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#111">FERRETERÍA</text>
+</svg>

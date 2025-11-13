@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2 class="mb-3">Consultas</h2>
+  <p class="text-muted">Completá el formulario y tu consulta llegará al email del local.</p>
+  {% if sent %}
+    <div class="alert alert-success">Tu consulta fue enviada correctamente.</div>
+  {% endif %}
+  <form method="post" class="row g-3" novalidate enctype="multipart/form-data">
+    <div class="col-12 col-md-6">
+      <label class="form-label">Nombre y Apellido</label>
+      <input type="text" name="nombre" class="form-control" maxlength="160" required>
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label">Email</label>
+      <input type="email" name="email" class="form-control" maxlength="160" required>
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label">Teléfono (opcional)</label>
+      <input type="text" name="telefono" class="form-control" maxlength="80" placeholder="Ej: 3624 123456">
+    </div>
+    <div class="col-12">
+      <label class="form-label">Consulta (máx 500 caracteres)</label>
+      <textarea name="consulta" class="form-control" rows="6" maxlength="500" required></textarea>
+      <div class="form-text">Especificá tu duda, producto que buscás o pedido.</div>
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label">Adjunto 1 (opcional)</label>
+      <input type="file" name="image1" accept="image/*" class="form-control">
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label">Adjunto 2 (opcional)</label>
+      <input type="file" name="image2" accept="image/*" class="form-control">
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label">Adjunto 3 (opcional)</label>
+      <input type="file" name="image3" accept="image/*" class="form-control">
+    </div>
+    <div class="col-12 d-flex justify-content-end">
+      <button type="submit" class="btn btn-primary">Enviar consulta</button>
+    </div>
+  </form>
+  {% if not (site_info and site_info.email) %}
+    <div class="alert alert-warning mt-3">Todavía no hay un email configurado para recibir consultas. Configuralo en el panel de información del local.</div>
+  {% endif %}
+{% endblock %}
