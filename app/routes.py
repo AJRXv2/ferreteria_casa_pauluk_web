@@ -967,7 +967,7 @@ def _save_consulta_image(file_storage):
     if ext not in allowed:
         return None
     fname = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = os.path.join(current_app.static_folder, 'img', 'consultas')
+    dest_dir = _resolved_img_subdir('consultas')
     os.makedirs(dest_dir, exist_ok=True)
     file_storage.save(os.path.join(dest_dir, fname))
     return fname
@@ -1204,7 +1204,7 @@ def _save_product_image(file_storage):
     if ext not in allowed:
         return None
     fname = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = os.path.join(current_app.static_folder, 'img', 'products')
+    dest_dir = _resolved_img_subdir('products')
     os.makedirs(dest_dir, exist_ok=True)
     file_storage.save(os.path.join(dest_dir, fname))
     return fname
@@ -1217,10 +1217,25 @@ def _save_slide_image(file_storage):
     if ext not in allowed:
         return None
     fname = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = os.path.join(current_app.static_folder, 'img', 'slides')
+    dest_dir = _resolved_img_subdir('slides')
     os.makedirs(dest_dir, exist_ok=True)
     file_storage.save(os.path.join(dest_dir, fname))
     return fname
+
+def _resolved_img_subdir(subdir: str) -> str:
+    """Retorna el directorio donde guardar imágenes.
+    Si volumen está habilitado y la carpeta existe en UPLOAD_ROOT, usarla.
+    Caso contrario fallback a static/img/<subdir>."""
+    try:
+        upload_root = os.getenv('UPLOAD_ROOT')
+        enabled = os.getenv('ENABLE_UPLOAD_VOLUME_LINKS', 'false').lower() == 'true'
+        if enabled and upload_root:
+            candidate = os.path.join(upload_root, subdir)
+            if os.path.isdir(candidate):
+                return candidate
+    except Exception:
+        pass
+    return os.path.join(current_app.static_folder, 'img', subdir)
 
 
 @bp.route("/admin/products/<uuid:product_id>/delete", methods=["POST"])
