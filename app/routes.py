@@ -1223,18 +1223,11 @@ def _save_slide_image(file_storage):
     return fname
 
 def _resolved_img_subdir(subdir: str) -> str:
-    """Retorna el directorio donde guardar imágenes.
-    Si volumen está habilitado y la carpeta existe en UPLOAD_ROOT, usarla.
-    Caso contrario fallback a static/img/<subdir>."""
-    try:
-        upload_root = os.getenv('UPLOAD_ROOT')
-        enabled = os.getenv('ENABLE_UPLOAD_VOLUME_LINKS', 'false').lower() == 'true'
-        if enabled and upload_root:
-            candidate = os.path.join(upload_root, subdir)
-            if os.path.isdir(candidate):
-                return candidate
-    except Exception:
-        pass
+    """Devuelve el path donde guardar la imagen.
+    Estrategia:
+      - Siempre escribir en static/img/<subdir> para que sea servible inmediatamente.
+      - Si volumen está habilitado y existe /data/uploads/<subdir>, copiar el archivo luego (lo hace el caller).
+    Nota: si el symlink se crea en el próximo deploy, esas imágenes ya estarán en el volumen desde la copia."""
     return os.path.join(current_app.static_folder, 'img', subdir)
 
 
