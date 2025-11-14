@@ -119,7 +119,7 @@
         <div class="row g-3">
           {% for p in products %}
           <div class="col-12 col-md-6 col-lg-3">
-            <div class="card hoverable h-100 border-0 shadow-sm" data-product-id="{{ p.id }}">
+            <div class="card hoverable h-100 border-0 shadow-sm" data-product-id="{{ p.id }}" data-product-url="{{ url_for('main.product_detail', product_id=p.id) }}">
               <div class="ratio ratio-4x3 bg-light">
                 {% if p.image_filename %}
                   <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">

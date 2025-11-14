@@ -46,7 +46,7 @@
         <div class="row g-3 justify-content-center">
           {% for p in featured_products[i:i+step] %}
             <div class="col-4 col-lg-3 {% if loop.index == 4 %}d-none d-lg-block{% endif %}">
-              <div class="card h-100 border-0 shadow-sm hoverable" data-product-id="{{ p.id }}">
+              <div class="card h-100 border-0 shadow-sm hoverable" data-product-id="{{ p.id }}" data-product-url="{{ url_for('main.product_detail', product_id=p.id) }}">
                 <div class="ratio ratio-4x3 bg-light">
                   {% if p.image_filename %}
                     <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
@@ -100,7 +100,7 @@
   </button>
   <div id="latestScroller" class="product-scroller d-flex gap-3 pb-2">
     {% for p in products %}
-      <div class="card h-100 border-0 shadow-sm flex-shrink-0 hoverable" style="width: 16rem;" data-product-id="{{ p.id }}">
+      <div class="card h-100 border-0 shadow-sm flex-shrink-0 hoverable" style="width: 16rem;" data-product-id="{{ p.id }}" data-product-url="{{ url_for('main.product_detail', product_id=p.id) }}">
         <div class="ratio ratio-4x3 bg-light">
                   {% if p.image_filename %}
                     <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">

@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+  <a href="{{ request.referrer or url_for('main.index') }}" class="btn btn-sm btn-outline-secondary">Volver al catálogo</a>
+  <h1 class="h3 mb-0">{{ product.name }}</h1>
+  {% if current_user.is_authenticated and current_user.is_admin %}
+    <a href="{{ url_for('main.products_admin_edit', product_id=product.id) }}" class="btn btn-sm btn-outline-primary">Editar producto</a>
+  {% endif %}
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-lg-7">
+    <div class="product-detail-hero shadow-sm rounded-4 border overflow-hidden bg-white">
+      {% if primary_image %}
+        <img id="productMainImage" src="{{ url_for('static', filename='img/products/' + primary_image) }}" alt="{{ product.name }}" class="w-100 h-100" loading="lazy">
+      {% else %}
+        <div class="w-100 text-center py-5 text-muted">
+          <i class="bi bi-tools" style="font-size: 3rem;"></i>
+          <div class="mt-2">Imagen no disponible</div>
+        </div>
+      {% endif %}
+    </div>
+    {% if gallery_images|length > 1 %}
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% for filename in gallery_images %}
+          <button type="button" class="product-gallery-thumb rounded-3" data-gallery-thumb="{{ url_for('static', filename='img/products/' + filename) }}">
+            <img src="{{ url_for('static', filename='img/products/' + filename) }}" alt="{{ product.name }}" class="w-100 h-100 rounded-3" loading="lazy">
+          </button>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="col-12 col-lg-5">
+    <p class="text-muted mb-1">
+      {% if product.brand %}{{ product.brand.name }}{% endif %}
+      {% if product.category %}
+        {% if product.brand %}&nbsp;·&nbsp;{% endif %}
+        {{ product.category.name }}
+      {% endif %}
+    </p>
+    <div class="d-flex align-items-center gap-3">
+      {% if product.price %}
+        <span class="product-price d-block fs-1 fw-bold text-dark">{{ product.price|ar_currency }}</span>
+      {% endif %}
+      <span class="badge {% if product.in_stock %}bg-success{% else %}bg-danger{% endif %} fs-6">{% if product.in_stock %}En stock{% else %}Sin stock{% endif %}</span>
+    </div>
+    {% if product.short_desc %}
+      <p class="lead text-dark mt-3">{{ product.short_desc }}</p>
+    {% endif %}
+    <div class="row row-cols-1 row-cols-sm-2 g-3 py-3 border-top border-bottom my-3">
+      <div class="col">
+        <div class="text-muted small">SKU</div>
+        <div class="fw-semibold">{{ product.sku or '–' }}</div>
+      </div>
+      <div class="col">
+        <div class="text-muted small">Actualizado</div>
+        <div class="fw-semibold">{{ product.updated_at.strftime('%d/%m/%Y') if product.updated_at else '-' }}</div>
+      </div>
+      {% if product.brand %}
+        <div class="col">
+          <div class="text-muted small">Marca</div>
+          <div class="fw-semibold">{{ product.brand.name }}</div>
+        </div>
+      {% endif %}
+      {% if product.category %}
+        <div class="col">
+          <div class="text-muted small">Categoría</div>
+          <div class="fw-semibold">{{ product.category.name }}</div>
+        </div>
+      {% endif %}
+    </div>
+    {% if site_info and site_info.whatsapp %}
+      {% set wa_digits = site_info.whatsapp|replace(' ', '')|replace('-', '') %}
+      <a class="btn btn-success btn-lg" href="https://wa.me/{{ wa_digits }}?text=Hola%20Ferreter%C3%ADa%20Casa%20Pauluk%2C%20quiero%20consultar%20por%20un%20producto" target="_blank" rel="noopener">
+        <i class="bi bi-whatsapp me-2"></i>Consultar por este producto
+      </a>
+    {% endif %}
+    {% if product.long_desc %}
+      <div class="product-detail-description mt-4">{{ product.long_desc|replace('\n', '<br>')|safe }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if product.images|length > 1 %}
+  <div class="mt-4">
+    <h5>Otras imágenes</h5>
+    <div class="row g-3">
+      {% for img in product.images %}
+        <div class="col-6 col-md-3">
+          <div class="ratio ratio-4x3 bg-light rounded-3 overflow-hidden border">
+            <img src="{{ url_for('static', filename='img/products/' + img.filename) }}" alt="{{ product.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

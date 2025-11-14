@@ -108,6 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (arr.length > 20) arr = arr.slice(0,20);
       localStorage.setItem(KEY, JSON.stringify(arr));
     } catch(_) {}
+    
+      const productUrl = card.getAttribute('data-product-url');
+      const interactive = e.target.closest('a, button, input, textarea, select, label, form');
+      if (productUrl && !interactive) {
+        window.location.href = productUrl;
+      }
   });
 
   // Renderizar sección de recientemente vistos si existe contenedor
@@ -124,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
             wrap.className = 'recently-viewed-wrapper';
             data.items.forEach(p => {
               const a = document.createElement('a');
-              a.href = '#'; // no hay página detalle todavía
+              a.href = `/productos/${p.id}`;
               a.className = 'recently-viewed-item text-decoration-none';
               a.setAttribute('data-product-id', p.id);
               a.innerHTML = `
@@ -141,4 +147,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch(_) {}
   }
+
+    const thumbButtons = document.querySelectorAll('[data-gallery-thumb]');
+    const mainImage = document.getElementById('productMainImage');
+    if (thumbButtons.length && mainImage) {
+      thumbButtons.forEach((button, index) => {
+        if (index === 0) button.classList.add('active');
+        button.addEventListener('click', () => {
+          const src = button.getAttribute('data-gallery-thumb');
+          if (src) {
+            mainImage.src = src;
+          }
+          thumbButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+        });
+      });
+    }
 });

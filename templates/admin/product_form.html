@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block content %}
 <h3 class="mb-3">{{ title }}</h3>
-<form method="post" action="{{ form_action }}">
+{% set cancel_href = cancel_url or url_for('main.products_admin_list') %}
+<form method="post" action="{{ form_action }}" enctype="multipart/form-data">
   <div class="row g-3">
     <div class="col-12 col-md-6">
       <label class="form-label">Nombre</label>
@@ -67,6 +68,21 @@
     </div>
 
     <div class="col-12">
+      <label class="form-label">Galería (hasta 10 imágenes)</label>
+      <input type="file" name="gallery_images" accept="image/*" multiple class="form-control">
+      {% if product and product.images %}
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          {% for img in product.images %}
+            <div class="border rounded-3 bg-white" style="padding: .2rem;">
+              <img src="{{ url_for('static', filename='img/products/' + img.filename) }}" alt="{{ product.name }}" class="img-fluid" style="max-height: 80px; object-fit: cover;">
+            </div>
+          {% endfor %}
+        </div>
+        <div class="form-text">Subí imágenes adicionales para la galería del producto. El sistema mantendrá el orden actual.</div>
+      {% endif %}
+    </div>
+
+    <div class="col-12">
       <label class="form-label">Descripción corta</label>
       <input type="text" name="short_desc" class="form-control" value="{{ product.short_desc if product and product.short_desc else '' }}" maxlength="300">
     </div>
@@ -78,7 +94,7 @@
   </div>
 
   <div class="mt-4">
-    <a class="btn btn-outline-secondary" href="{{ url_for('main.products_admin_list') }}">Cancelar</a>
+    <a class="btn btn-outline-secondary" href="{{ cancel_href }}">Cancelar</a>
     <button class="btn btn-primary" type="submit">Guardar</button>
   </div>
 </form>

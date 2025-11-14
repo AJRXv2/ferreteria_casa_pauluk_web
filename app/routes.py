@@ -1,11 +1,13 @@
 import uuid
+import json
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 import os
 import base64
 import mimetypes
 import random
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response
+from types import SimpleNamespace
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response, session
 from flask_login import login_user, logout_user, login_required, current_user
 from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta, ProductImage
 from sqlalchemy.exc import ProgrammingError, OperationalError
@@ -13,6 +15,30 @@ from sqlalchemy import or_
 from . import db, slugify
 
 bp = Blueprint("main", __name__)
+
+
+def _get_bulk_preview_rows():
+    return list(session.get("bulk_preview_rows") or [])
+
+
+def _set_bulk_preview_rows(rows):
+    session["bulk_preview_rows"] = rows
+    session.modified = True
+
+
+def _clear_bulk_preview_rows():
+    if "bulk_preview_rows" in session:
+        session.pop("bulk_preview_rows", None)
+        session.modified = True
+
+
+def _coerce_uuid(value):
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except Exception:
+        return None
 
 
 @bp.route("/")
@@ -136,6 +162,28 @@ def brand_pattern_svg():
     # Evitar cache para que al agregar logos se vea al instante
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
+
+
+@bp.route("/productos/<uuid:product_id>")
+def product_detail(product_id):
+    product = Product.query.get_or_404(product_id)
+    gallery_images = []
+    if product.image_filename:
+        gallery_images.append(product.image_filename)
+    gallery_images.extend(img.filename for img in product.images)
+    seen = set()
+    unique_images = []
+    for filename in gallery_images:
+        if filename and filename not in seen:
+            seen.add(filename)
+            unique_images.append(filename)
+    primary_image = unique_images[0] if unique_images else None
+    return render_template(
+        "product_detail.html",
+        product=product,
+        gallery_images=unique_images,
+        primary_image=primary_image,
+    )
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -616,6 +664,10 @@ def categories_admin_delete(category_id):
 def products_admin_list():
     roots = _category_roots_with_children()
     brands = Brand.query.order_by(Brand.name).all()
+    preview_rows = _get_bulk_preview_rows()
+    if request.method == "GET" and request.args.get("clear_preview") == "1":
+        _clear_bulk_preview_rows()
+        preview_rows = []
 
     # Búsqueda y filtros para la sección "Buscar y Editar Productos"
     q = (request.args.get("q") or "").strip()
@@ -714,6 +766,7 @@ def products_admin_list():
                     "category_id": base["category_id"],
                     "brand_id": request.form.get("brand_id") or "",
                 })
+            _set_bulk_preview_rows(preview_rows)
             # Render sin redirigir, misma página con la tabla editable
             return render_template(
                 "admin/products_list.html",
@@ -729,6 +782,44 @@ def products_admin_list():
                 pages=pages,
                 total=0,
             )
+        elif action == "excel_preview":
+            payload = request.form.get("excel_payload") or "[]"
+            try:
+                rows = json.loads(payload)
+            except Exception:
+                rows = []
+            preview_rows = []
+            for row in rows:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                sku = (row.get("sku") or "").strip() or None
+                preview_rows.append({
+                    "name": name,
+                    "sku": sku,
+                    "price": (row.get("price") or "").strip(),
+                    "in_stock": bool(row.get("in_stock", True)),
+                    "category_id": row.get("category_id") or "",
+                    "brand_id": row.get("brand_id") or "",
+                })
+            if not preview_rows:
+                flash("No se encontraron productos válidos en el Excel subido.", "warning")
+                return redirect(url_for("main.products_admin_list"))
+            _set_bulk_preview_rows(preview_rows)
+            return render_template(
+                "admin/products_list.html",
+                roots=roots,
+                brands=brands,
+                preview_rows=preview_rows,
+                products=[],
+                q=q,
+                category_id=category_id_raw,
+                brand_id=brand_id_raw,
+                per_page=per_page,
+                page=page,
+                pages=1,
+                total=0,
+            )
         elif action == "save":
             # Paso 2: recibir items[i][field] y guardarlos
             delete_mode = request.form.get("delete_mode")  # 'selected', 'all' o None
@@ -740,6 +831,7 @@ def products_admin_list():
             # Si el usuario eligió "Eliminar todo", no creamos nada
             if delete_mode == "all":
                 flash("Se descartaron todos los productos del listado a crear.", "info")
+                _clear_bulk_preview_rows()
                 return redirect(url_for("main.products_admin_list"))
 
             created = 0
@@ -785,7 +877,7 @@ def products_admin_list():
                 flash(f"{created} producto(s) creados", "success")
             else:
                 flash("No se crearon productos. Revisá los datos.", "warning")
-            # Volver a listar en la misma página
+            _clear_bulk_preview_rows()
         # Tras guardar, recargar búsqueda actualizada (primer página)
         return redirect(url_for("main.products_admin_list"))
 
@@ -795,6 +887,7 @@ def products_admin_list():
         roots=roots,
         brands=brands,
         products=products_page,
+        preview_rows=preview_rows,
         q=q,
         category_id=category_id_raw,
         brand_id=brand_id_raw,
@@ -802,6 +895,70 @@ def products_admin_list():
         page=page,
         pages=pages,
         total=total,
+    )
+
+
+@bp.route("/admin/products/bulk/preview/<int:row_index>/edit", methods=["GET", "POST"])
+@admin_required
+def products_admin_preview_edit(row_index):
+    rows = _get_bulk_preview_rows()
+    if not rows or row_index < 0 or row_index >= len(rows):
+        flash("No se encontró la fila a editar.", "warning")
+        return redirect(url_for("main.products_admin_list"))
+
+    current = rows[row_index]
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("El nombre es obligatorio.", "danger")
+            return redirect(request.url)
+        updated_row = {
+            "name": name,
+            "sku": (request.form.get("sku") or "").strip(),
+            "price": (request.form.get("price") or "").strip(),
+            "in_stock": bool(request.form.get("in_stock")),
+            "category_id": request.form.get("category_id") or "",
+            "brand_id": request.form.get("brand_id") or "",
+        }
+        rows[row_index] = updated_row
+        _set_bulk_preview_rows(rows)
+        flash("Borrador actualizado.", "success")
+        return redirect(url_for("main.products_admin_list"))
+
+    def _prefill_price(value):
+        if not value:
+            return None
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            normalized = raw.replace('.', '').replace(',', '.')
+            return Decimal(normalized)
+        except (InvalidOperation, AttributeError):
+            return None
+
+    product = SimpleNamespace(
+        name=current.get("name", ""),
+        sku=current.get("sku") or "",
+        price=_prefill_price(current.get("price")),
+        in_stock=current.get("in_stock", True),
+        short_desc=None,
+        long_desc=None,
+        category_id=_coerce_uuid(current.get("category_id")),
+        brand_id=_coerce_uuid(current.get("brand_id")),
+        image_filename=None,
+        images=[],
+    )
+    roots = _category_roots_with_children()
+    brands = Brand.query.order_by(Brand.name).all()
+    return render_template(
+        "admin/product_form.html",
+        roots=roots,
+        brands=brands,
+        product=product,
+        form_action=url_for("main.products_admin_preview_edit", row_index=row_index),
+        title="Editar borrador en detalle",
+        cancel_url=url_for("main.products_admin_list"),
     )
 
 
@@ -1400,10 +1557,8 @@ def products_admin_new():
         in_stock = bool(request.form.get("in_stock"))
         short_desc = (request.form.get("short_desc") or "").strip() or None
         long_desc = (request.form.get("long_desc") or "").strip() or None
-        cat_id_raw = request.form.get("category_id") or None
-        category_id = uuid.UUID(cat_id_raw) if cat_id_raw else None
-        brand_id_raw = request.form.get("brand_id") or None
-        brand_id = uuid.UUID(brand_id_raw) if brand_id_raw else None
+        category_id = _coerce_uuid(request.form.get("category_id"))
+        brand_id = _coerce_uuid(request.form.get("brand_id"))
 
         if not name:
             flash("El nombre es obligatorio", "danger")
@@ -1437,10 +1592,45 @@ def products_admin_new():
 
     roots = _category_roots_with_children()
     brands = Brand.query.order_by(Brand.name).all()
+    prefill = None
+    if request.method == "GET":
+        name_arg = (request.args.get("name") or "").strip()
+        sku_arg = (request.args.get("sku") or "").strip()
+        price_arg = (request.args.get("price") or "").strip()
+        cat_arg = (request.args.get("category_id") or "").strip()
+        brand_arg = (request.args.get("brand_id") or "").strip()
+        in_stock_arg = request.args.get("in_stock")
+
+        price_prefill = None
+        if price_arg:
+            price_clean = price_arg.replace('.', '').replace(',', '.')
+            try:
+                price_prefill = Decimal(price_clean)
+            except (InvalidOperation, AttributeError):
+                price_prefill = None
+
+        prefill_candidates = [name_arg, sku_arg, price_arg, cat_arg, brand_arg, in_stock_arg]
+        if any(prefill_candidates):
+            in_stock_prefill = True
+            if in_stock_arg is not None:
+                in_stock_prefill = str(in_stock_arg).lower() in {"1", "true", "on", "yes"}
+            prefill = SimpleNamespace(
+                name=name_arg or "",
+                sku=sku_arg or None,
+                price=price_prefill,
+                category_id=_coerce_uuid(cat_arg),
+                brand_id=_coerce_uuid(brand_arg),
+                in_stock=in_stock_prefill,
+                short_desc=None,
+                long_desc=None,
+                image_filename=None,
+                images=[],
+            )
     return render_template(
         "admin/product_form.html",
         roots=roots,
         brands=brands,
+        product=prefill,
         form_action=url_for("main.products_admin_new"),
         title="Nuevo producto",
     )
@@ -1487,6 +1677,25 @@ def products_admin_edit(product_id):
         p.brand_id = brand_id
         if new_image:
             p.image_filename = new_image
+
+        gallery_files = request.files.getlist("gallery_images")
+        if gallery_files:
+            existing_count = len(p.images)
+            if p.image_filename:
+                existing_count += 1
+            next_position = (p.images[-1].position + 1) if p.images else 1
+            for gallery_file in gallery_files:
+                if not gallery_file or not gallery_file.filename:
+                    continue
+                if existing_count >= 10:
+                    break
+                filename = _save_product_image(gallery_file)
+                if not filename:
+                    continue
+                pi = ProductImage(product_id=p.id, filename=filename, position=next_position)
+                db.session.add(pi)
+                existing_count += 1
+                next_position += 1
         db.session.commit()
         flash("Producto actualizado", "success")
         return redirect(url_for("main.products_admin_list"))
