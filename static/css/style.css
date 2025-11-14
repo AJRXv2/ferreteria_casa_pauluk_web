@@ -129,10 +129,10 @@ body { background: #f8f9fa; }
 .navbar-pattern {
 	background-image: url('/brand-pattern.svg');
 	background-repeat: repeat-x;
-	/* Escalar el tile para que su altura coincida con la barra y se vean todas las filas */
-	background-size: auto 111%;
+	/* El tile ahora es una fila horizontal alta, así que fijamos la altura y dejamos que el ancho se repita */
+	background-size: auto 120px;
 	background-position: 0 0;
-	animation: navbar-logos-scroll 60s linear infinite;
+	animation: navbar-logos-scroll 55s linear infinite;
 }
 
 @keyframes navbar-logos-scroll {
@@ -140,7 +140,7 @@ body { background: #f8f9fa; }
 		background-position: 0 0;
 	}
 	to {
-		background-position: -600px 0;
+		background-position: -2400px 0;
 	}
 }
 

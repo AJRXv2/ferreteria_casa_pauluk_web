@@ -4,6 +4,7 @@ from functools import wraps
 import os
 import base64
 import mimetypes
+import random
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response
 from flask_login import login_user, logout_user, login_required, current_user
 from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta, ProductImage
@@ -54,11 +55,16 @@ def brand_pattern_svg():
     brands_dir = os.path.join(current_app.static_folder, "img", "brands")
     allowed_ext = {".svg", ".png", ".webp", ".jpg", ".jpeg"}
     files = []
+    candidate_files = []
     if os.path.isdir(brands_dir):
-        for fn in sorted(os.listdir(brands_dir)):
+        for fn in os.listdir(brands_dir):
             ext = os.path.splitext(fn)[1].lower()
             if ext in allowed_ext:
-                files.append(os.path.join(brands_dir, fn))
+                candidate_files.append(os.path.join(brands_dir, fn))
+    # Mezclar para que no salga siempre igual y tomar hasta 20 logos
+    random.shuffle(candidate_files)
+    max_cells = 20
+    files = candidate_files[:max_cells]
 
     # Si no hay logos, devolvemos un tile vacío transparente mínimo
     if not files:
@@ -70,11 +76,12 @@ def brand_pattern_svg():
         resp.headers["Cache-Control"] = "no-store, max-age=0"
         return resp
 
-    # Parámetros del tile y grilla
-    tile_w = 360
-    tile_h = 360
-    cols = 3
-    rows = 3
+    # Parámetros del tile: una sola fila para hasta 20 logos
+    cols = max_cells
+    rows = 1
+    base_cell = 120
+    tile_w = cols * base_cell
+    tile_h = base_cell
     cell_w = tile_w // cols
     cell_h = tile_h // rows
     pad = int(min(cell_w, cell_h) * 0.1)
