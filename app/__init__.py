@@ -34,6 +34,68 @@ def create_app():
     from .routes import bp as main_bp  # noqa: E402
     app.register_blueprint(main_bp)
 
+    # Opcional: enlazar subcarpetas de static/img a un volumen persistente (UPLOAD_ROOT)
+    def _link_static_to_volume_if_configured():
+        try:
+            enabled = os.getenv("ENABLE_UPLOAD_VOLUME_LINKS", "false").lower() == "true"
+            upload_root = os.getenv("UPLOAD_ROOT")
+            if not enabled or not upload_root:
+                return
+            img_src = os.path.join(app.static_folder, 'img')
+            # Crear destino y subcarpetas
+            subdirs = ['products', 'slides', 'consultas', 'brands']
+            os.makedirs(upload_root, exist_ok=True)
+            for name in subdirs:
+                os.makedirs(os.path.join(upload_root, name), exist_ok=True)
+            # Si destino está vacío y origen tiene archivos, copiar semilla
+            try:
+                if len(os.listdir(upload_root)) == 0 and os.path.isdir(img_src):
+                    import shutil
+                    for name in subdirs:
+                        s = os.path.join(img_src, name)
+                        d = os.path.join(upload_root, name)
+                        if os.path.isdir(s) and len(os.listdir(d)) == 0:
+                            # copiar contenido inicial
+                            for entry in os.listdir(s):
+                                sp = os.path.join(s, entry)
+                                dp = os.path.join(d, entry)
+                                try:
+                                    if os.path.isdir(sp):
+                                        shutil.copytree(sp, dp, dirs_exist_ok=True)
+                                    else:
+                                        shutil.copy2(sp, dp)
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
+            # Crear enlaces simbólicos para que /static/img/<subdir> apunte al volumen
+            for name in subdirs:
+                target = os.path.join(upload_root, name)
+                link_path = os.path.join(img_src, name)
+                try:
+                    if os.path.islink(link_path):
+                        # actualizar si apunta a otro lado
+                        cur = os.readlink(link_path)
+                        if cur != target:
+                            os.unlink(link_path)
+                            os.symlink(target, link_path)
+                    else:
+                        # si existe como carpeta, intentar reemplazar sólo si está vacía
+                        if os.path.isdir(link_path) and len(os.listdir(link_path)) == 0:
+                            try:
+                                os.rmdir(link_path)
+                            except Exception:
+                                pass
+                        if not os.path.exists(link_path):
+                            os.symlink(target, link_path)
+                except Exception:
+                    # En Windows o entornos sin permisos, ignorar silenciosamente
+                    pass
+        except Exception:
+            pass
+
+    _link_static_to_volume_if_configured()
+
     # Seed categorías base si no existen (solo si la tabla ya existe)
     with app.app_context():
         from .models import Category, User, SiteInfo  # noqa: E402

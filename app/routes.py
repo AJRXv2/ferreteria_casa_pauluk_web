@@ -528,7 +528,7 @@ def categories_admin_new():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         parent_id_raw = request.form.get("parent_id") or None
-        parent_id = uuid.UUID(parent_id_raw) if parent_id_raw else None
+        parent_id = _safe_uuid(parent_id_raw)
         if not name:
             flash("El nombre es obligatorio", "danger")
             return redirect(url_for("main.categories_admin_new"))
@@ -554,13 +554,23 @@ def categories_admin_edit(category_id):
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         parent_id_raw = request.form.get("parent_id") or None
-        parent_id = uuid.UUID(parent_id_raw) if parent_id_raw else None
+        parent_id = _safe_uuid(parent_id_raw)
         if not name:
             flash("El nombre es obligatorio", "danger")
             return redirect(url_for("main.categories_admin_edit", category_id=cat.id))
         if parent_id == cat.id:
             flash("La categoría no puede ser su propio padre", "danger")
             return redirect(url_for("main.categories_admin_edit", category_id=cat.id))
+        # Evitar ciclos: no permitir asignar como padre un descendiente
+        if parent_id is not None:
+            try:
+                subtree_ids = set(_collect_category_ids(cat))
+                subtree_ids.discard(cat.id)
+                if parent_id in subtree_ids:
+                    flash("No se puede asignar una subcategoría como padre (crearía un ciclo)", "danger")
+                    return redirect(url_for("main.categories_admin_edit", category_id=cat.id))
+            except Exception:
+                pass
         cat.name = name
         cat.slug = slugify(name)
         cat.parent_id = parent_id
@@ -722,6 +732,17 @@ def _parse_decimal(val: str | None):
     try:
         sval = val.replace('.', '').replace(',', '.')
         return Decimal(sval)
+    except Exception:
+        return None
+def _safe_uuid(val):
+    """Devuelve UUID o None; tolera valores vacíos, 'None', 'null', 'undefined' y cadenas inválidas sin lanzar excepción."""
+    if not val:
+        return None
+    sval = str(val).strip().lower()
+    if sval in {"none", "null", "undefined", ""}:
+        return None
+    try:
+        return uuid.UUID(val)
     except Exception:
         return None
 
