@@ -41,10 +41,14 @@ def create_app():
         try:
             enabled = os.getenv("ENABLE_UPLOAD_VOLUME_LINKS", "false").lower() == "true"
             upload_root = os.getenv("UPLOAD_ROOT")
+            img_src = os.path.join(app.static_folder, "img")
+            direct_mount = os.getenv("STATIC_IMG_DIRECT_MOUNT", "false").lower() == "true"
+            if direct_mount:
+                app.logger.info(f"[uploads-volume] modo direct-mount activo; se asume volumen ya montado en {img_src}. No se hacen symlinks.")
+                return
             if not enabled or not upload_root:
                 app.logger.info(f"[uploads-volume] deshabilitado (ENABLE_UPLOAD_VOLUME_LINKS={enabled}, UPLOAD_ROOT={upload_root})")
                 return
-            img_src = os.path.join(app.static_folder, "img")
             app.logger.info(f"[uploads-volume] inicio enlace. upload_root={upload_root} img_src={img_src}")
             subdirs = ["products", "slides", "consultas", "brands"]
             os.makedirs(upload_root, exist_ok=True)
@@ -85,32 +89,40 @@ def create_app():
                             app.logger.info(f"[uploads-volume] symlink actualizado {link_path} -> {target}")
                         else:
                             app.logger.info(f"[uploads-volume] symlink OK {link_path} -> {cur}")
-                    else:
-                        # Si existe carpeta, copiar su contenido al volumen y reemplazar por symlink
-                        if os.path.isdir(link_path):
-                            import shutil
-                            try:
-                                for entry in os.listdir(link_path):
-                                    src_entry = os.path.join(link_path, entry)
-                                    dst_entry = os.path.join(target, entry)
-                                    try:
-                                        if os.path.isdir(src_entry):
-                                            shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
-                                        else:
-                                            shutil.copy2(src_entry, dst_entry)
-                                    except Exception as ce2:
-                                        app.logger.warning(f"[uploads-volume] fallo copiando {src_entry}: {ce2}")
-                                backup_path = link_path + ".bak_initial"
-                                if not os.path.exists(backup_path):
-                                    os.rename(link_path, backup_path)
-                                    app.logger.info(f"[uploads-volume] carpeta original renombrada a {backup_path}")
-                            except Exception as e_copy:
-                                app.logger.warning(f"[uploads-volume] error copiando contenido previo {link_path}: {e_copy}")
-                        if not os.path.exists(target):
-                            os.makedirs(target, exist_ok=True)
-                        if not os.path.islink(link_path):
-                            os.symlink(target, link_path)
-                            app.logger.info(f"[uploads-volume] symlink creado {link_path} -> {target}")
+                        continue
+
+                    # Si existe carpeta física, copiar su contenido al volumen y reemplazarla
+                    if os.path.isdir(link_path):
+                        import shutil
+                        try:
+                            for entry in os.listdir(link_path):
+                                src_entry = os.path.join(link_path, entry)
+                                dst_entry = os.path.join(target, entry)
+                                try:
+                                    if os.path.isdir(src_entry):
+                                        shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
+                                    else:
+                                        shutil.copy2(src_entry, dst_entry)
+                                except Exception as ce2:
+                                    app.logger.warning(f"[uploads-volume] fallo copiando {src_entry}: {ce2}")
+                            app.logger.info(f"[uploads-volume] contenido copiado al volumen desde {link_path}")
+                        except Exception as e_copy:
+                            app.logger.warning(f"[uploads-volume] error copiando contenido previo {link_path}: {e_copy}")
+
+                        try:
+                            shutil.rmtree(link_path)
+                            app.logger.info(f"[uploads-volume] carpeta original eliminada {link_path}")
+                        except Exception as e_rm:
+                            app.logger.warning(f"[uploads-volume] no se pudo eliminar {link_path}: {e_rm}")
+                            continue
+
+                    if not os.path.exists(target):
+                        os.makedirs(target, exist_ok=True)
+                    try:
+                        os.symlink(target, link_path)
+                        app.logger.info(f"[uploads-volume] symlink creado {link_path} -> {target}")
+                    except FileExistsError:
+                        app.logger.warning(f"[uploads-volume] todavía existe {link_path} impidiendo symlink; se seguirá usando almacenamiento local")
                 except Exception as e_link:
                     app.logger.warning(f"[uploads-volume] fallo symlink {link_path}: {e_link}")
         except Exception as e_outer:
