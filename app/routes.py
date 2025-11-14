@@ -6,7 +6,7 @@ import base64
 import mimetypes
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response
 from flask_login import login_user, logout_user, login_required, current_user
-from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta
+from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta, ProductImage
 from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy import or_
 from . import db, slugify
@@ -607,15 +607,79 @@ def categories_admin_delete(category_id):
 @bp.route("/admin/products", methods=["GET", "POST"])
 @admin_required
 def products_admin_list():
-    products = (
-        Product.query
-        .outerjoin(Category, Product.category_id == Category.id)
-        .add_entity(Category)
-        .order_by(Product.created_at.desc())
-        .all()
-    )
     roots = _category_roots_with_children()
     brands = Brand.query.order_by(Brand.name).all()
+
+    # Búsqueda y filtros para la sección "Buscar y Editar Productos"
+    q = (request.args.get("q") or "").strip()
+    category_id_raw = request.args.get("category_id") or None
+    brand_id_raw = request.args.get("brand_id") or None
+    per_page_raw = request.args.get("per_page") or "20"
+    page_raw = request.args.get("page") or "1"
+
+    try:
+        per_page = int(per_page_raw)
+    except ValueError:
+        per_page = 20
+    if per_page not in (20, 50, 100):
+        per_page = 20
+    try:
+        page = max(1, int(page_raw))
+    except ValueError:
+        page = 1
+
+    # Por defecto no mostramos productos hasta que haya algún criterio de búsqueda
+    products_page = []
+    total = 0
+    pages = 1
+
+    has_filters = bool(q or category_id_raw or brand_id_raw)
+
+    if has_filters:
+        search_q = (
+            Product.query
+            .outerjoin(Category, Product.category_id == Category.id)
+            .add_entity(Category)
+        )
+
+        # Filtro por categoría
+        if category_id_raw:
+            try:
+                cid = uuid.UUID(category_id_raw)
+                search_q = search_q.filter(Product.category_id == cid)
+            except Exception:
+                pass
+
+        # Filtro por marca
+        if brand_id_raw:
+            try:
+                bid = uuid.UUID(brand_id_raw)
+                search_q = search_q.filter(Product.brand_id == bid)
+            except Exception:
+                pass
+
+        # Búsqueda inteligente: combina nombre, descripción y código (SKU)
+        if q:
+            tokens = [t for t in q.split() if t]
+            for tok in tokens:
+                like = f"%{tok}%"
+                search_q = search_q.filter(
+                    or_(
+                        Product.name.ilike(like),
+                        Product.short_desc.ilike(like),
+                        Product.long_desc.ilike(like),
+                        Product.sku.ilike(like),
+                    )
+                )
+
+        search_q = search_q.order_by(Product.created_at.desc())
+        total = search_q.count()
+        pages = (total + per_page - 1) // per_page if total else 1
+        if pages == 0:
+            pages = 1
+        if page > pages:
+            page = pages
+        products_page = search_q.offset((page - 1) * per_page).limit(per_page).all()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -646,19 +710,37 @@ def products_admin_list():
             # Render sin redirigir, misma página con la tabla editable
             return render_template(
                 "admin/products_list.html",
-                products=products,
                 roots=roots,
                 brands=brands,
                 preview_rows=preview_rows,
+                products=[],
+                q=q,
+                category_id=category_id_raw,
+                brand_id=brand_id_raw,
+                per_page=per_page,
+                page=page,
+                pages=pages,
+                total=0,
             )
         elif action == "save":
             # Paso 2: recibir items[i][field] y guardarlos
+            delete_mode = request.form.get("delete_mode")  # 'selected', 'all' o None
             try:
                 count = int(request.form.get("items_count", "0"))
             except ValueError:
                 count = 0
+
+            # Si el usuario eligió "Eliminar todo", no creamos nada
+            if delete_mode == "all":
+                flash("Se descartaron todos los productos del listado a crear.", "info")
+                return redirect(url_for("main.products_admin_list"))
+
             created = 0
             for i in range(count):
+                # Si se eligió "Eliminar seleccionados" y este ítem está tildado, saltarlo
+                if delete_mode == "selected" and request.form.get(f"items[{i}][delete]"):
+                    continue
+
                 name = (request.form.get(f"items[{i}][name]") or "").strip()
                 if not name:
                     continue
@@ -697,17 +779,235 @@ def products_admin_list():
             else:
                 flash("No se crearon productos. Revisá los datos.", "warning")
             # Volver a listar en la misma página
-            products = (
-                Product.query
-                .outerjoin(Category, Product.category_id == Category.id)
-                .add_entity(Category)
-                .order_by(Product.created_at.desc())
-                .all()
-            )
-        return render_template("admin/products_list.html", products=products, roots=roots, brands=brands)
+        # Tras guardar, recargar búsqueda actualizada (primer página)
+        return redirect(url_for("main.products_admin_list"))
 
-    # GET simple
-    return render_template("admin/products_list.html", products=products, roots=roots, brands=brands)
+    # GET simple: mostrar creador masivo + buscador con filtros y paginación
+    return render_template(
+        "admin/products_list.html",
+        roots=roots,
+        brands=brands,
+        products=products_page,
+        q=q,
+        category_id=category_id_raw,
+        brand_id=brand_id_raw,
+        per_page=per_page,
+        page=page,
+        pages=pages,
+        total=total,
+    )
+
+
+@bp.route("/admin/products/bulk-delete", methods=["POST"])
+@admin_required
+def products_admin_bulk_delete():
+    mode = request.form.get("mode")  # 'selected' o 'all'
+
+    # Parámetros de búsqueda para reconstruir el listado después
+    q = (request.form.get("q") or "").strip()
+    category_id_raw = request.form.get("category_id") or None
+    brand_id_raw = request.form.get("brand_id") or None
+    per_page_raw = request.form.get("per_page") or "20"
+    page_raw = request.form.get("page") or "1"
+
+    try:
+        per_page = int(per_page_raw)
+    except ValueError:
+        per_page = 20
+    if per_page not in (20, 50, 100):
+        per_page = 20
+    try:
+        page = max(1, int(page_raw))
+    except ValueError:
+        page = 1
+
+    deleted = 0
+    if mode == "selected":
+        ids = request.form.getlist("product_ids")
+        if ids:
+            for raw in ids:
+                try:
+                    pid = uuid.UUID(raw)
+                except Exception:
+                    continue
+                p = Product.query.get(pid)
+                if p:
+                    db.session.delete(p)
+                    deleted += 1
+            if deleted:
+                db.session.commit()
+    elif mode == "all":
+        # Borrar todos los productos que coinciden con el filtro actual
+        qry = Product.query
+        if category_id_raw:
+            try:
+                cid = uuid.UUID(category_id_raw)
+                qry = qry.filter(Product.category_id == cid)
+            except Exception:
+                pass
+        if brand_id_raw:
+            try:
+                bid = uuid.UUID(brand_id_raw)
+                qry = qry.filter(Product.brand_id == bid)
+            except Exception:
+                pass
+        if q:
+            tokens = [t for t in q.split() if t]
+            for tok in tokens:
+                like = f"%{tok}%"
+                qry = qry.filter(
+                    or_(
+                        Product.name.ilike(like),
+                        Product.short_desc.ilike(like),
+                        Product.long_desc.ilike(like),
+                        Product.sku.ilike(like),
+                    )
+                )
+        deleted = qry.delete(synchronize_session=False)
+        if deleted:
+            db.session.commit()
+
+    if deleted:
+        flash(f"Se eliminaron {deleted} producto(s)", "success")
+    else:
+        flash("No se eliminó ningún producto.", "info")
+
+    return redirect(url_for(
+        "main.products_admin_list",
+        q=q,
+        category_id=category_id_raw,
+        brand_id=brand_id_raw,
+        per_page=per_page,
+        page=page,
+    ))
+
+
+@bp.route("/admin/products/inline-update", methods=["POST"])
+@admin_required
+def products_admin_inline_update():
+    # Actualiza varios productos desde la tabla editable sin salir de la página
+    q = (request.form.get("q") or "").strip()
+    category_id_raw = request.form.get("category_id") or None
+    brand_id_raw = request.form.get("brand_id") or None
+    per_page_raw = request.form.get("per_page") or "20"
+    page_raw = request.form.get("page") or "1"
+
+    try:
+        per_page = int(per_page_raw)
+    except ValueError:
+        per_page = 20
+    if per_page not in (20, 50, 100):
+        per_page = 20
+    try:
+        page = max(1, int(page_raw))
+    except ValueError:
+        page = 1
+
+    updated = 0
+
+    # Implementación: iterar por productos visibles en la página
+    search_q = Product.query
+    if category_id_raw:
+        try:
+            cid = uuid.UUID(category_id_raw)
+            search_q = search_q.filter(Product.category_id == cid)
+        except Exception:
+            pass
+    if brand_id_raw:
+        try:
+            bid = uuid.UUID(brand_id_raw)
+            search_q = search_q.filter(Product.brand_id == bid)
+        except Exception:
+            pass
+    if q:
+        tokens = [t for t in q.split() if t]
+        for tok in tokens:
+            like = f"%{tok}%"
+            search_q = search_q.filter(
+                or_(
+                    Product.name.ilike(like),
+                    Product.short_desc.ilike(like),
+                    Product.long_desc.ilike(like),
+                    Product.sku.ilike(like),
+                )
+            )
+
+    search_q = search_q.order_by(Product.created_at.desc())
+    page_products = search_q.offset((page - 1) * per_page).limit(per_page).all()
+
+    for p in page_products:
+        prefix = f"items[{p.id}]"
+        name = (request.form.get(f"{prefix}[name]") or "").strip()
+        sku = (request.form.get(f"{prefix}[sku]") or "").strip() or None
+        price_raw = (request.form.get(f"{prefix}[price]") or "").strip()
+        in_stock = bool(request.form.get(f"{prefix}[in_stock]"))
+        brand_raw = request.form.get(f"{prefix}[brand_id]") or None
+        category_raw = request.form.get(f"{prefix}[category_id]") or None
+        new_images = request.files.getlist(f"images_{p.id}[]")
+
+        if not name:
+            continue
+
+        p.name = name
+        p.sku = sku
+
+        if price_raw:
+            price_clean = price_raw.replace('.', '').replace(',', '.')
+            try:
+                p.price = Decimal(price_clean)
+            except (InvalidOperation, AttributeError):
+                p.price = None
+        else:
+            p.price = None
+
+        p.in_stock = in_stock
+
+        try:
+            p.brand_id = uuid.UUID(brand_raw) if brand_raw else None
+        except Exception:
+            p.brand_id = None
+        try:
+            p.category_id = uuid.UUID(category_raw) if category_raw else None
+        except Exception:
+            p.category_id = None
+
+        # Agregar nuevas imágenes hasta un máximo de 10 por producto
+        existing_count = 0
+        if p.image_filename:
+            existing_count += 1
+        existing_count += len(p.images)
+
+        next_position = (p.images[-1].position + 1) if p.images else 1
+
+        for image_file in new_images:
+            if not image_file or not image_file.filename:
+                continue
+            if existing_count >= 10:
+                break
+            filename = _save_product_image(image_file)
+            if not filename:
+                continue
+            pi = ProductImage(product_id=p.id, filename=filename, position=next_position)
+            db.session.add(pi)
+            existing_count += 1
+            next_position += 1
+
+        updated += 1
+
+    if updated:
+        db.session.commit()
+        flash(f"Se actualizaron {updated} producto(s)", "success")
+    else:
+        flash("No se aplicaron cambios.", "info")
+
+    return redirect(url_for(
+        "main.products_admin_list",
+        q=q,
+        category_id=category_id_raw,
+        brand_id=brand_id_raw,
+        per_page=per_page,
+        page=page,
+    ))
 
 
 def _category_roots_with_children():

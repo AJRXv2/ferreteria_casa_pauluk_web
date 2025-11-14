@@ -46,6 +46,18 @@ class Product(db.Model):
     )
 
 
+class ProductImage(db.Model):
+    __tablename__ = "product_images"
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_id = db.Column(UUID(as_uuid=True), db.ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    filename = db.Column(db.String(200), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    product = db.relationship("Product", backref=db.backref("images", cascade="all, delete-orphan", order_by="ProductImage.position"))
+
+
 class Brand(db.Model):
     __tablename__ = "brands"
 

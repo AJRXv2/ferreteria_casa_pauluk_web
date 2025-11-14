@@ -128,10 +128,20 @@ body { background: #f8f9fa; }
 /* Patrón de marcas como fondo en navbar */
 .navbar-pattern {
 	background-image: url('/brand-pattern.svg');
-	background-repeat: repeat;
+	background-repeat: repeat-x;
 	/* Escalar el tile para que su altura coincida con la barra y se vean todas las filas */
-	background-size: auto 100%;
-	background-position: center top;
+	background-size: auto 111%;
+	background-position: 0 0;
+	animation: navbar-logos-scroll 60s linear infinite;
+}
+
+@keyframes navbar-logos-scroll {
+	from {
+		background-position: 0 0;
+	}
+	to {
+		background-position: -600px 0;
+	}
 }
 
 /* Carousel home más alto */

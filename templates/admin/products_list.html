@@ -89,6 +89,7 @@
         <table class="table align-middle">
           <thead class="table-light">
             <tr>
+              <th style="width: 40px"></th>
               <th>Nombre</th>
               <th>SKU</th>
               <th style="width: 130px">Precio</th>
@@ -102,6 +103,9 @@
             {% for row in preview_rows %}
             {% set i = loop.index0 %}
             <tr>
+              <td class="text-center">
+                <input class="form-check-input" type="checkbox" name="items[{{ i }}][delete]">
+              </td>
               <td>
                 <input type="text" name="items[{{ i }}][name]" class="form-control" value="{{ row.name }}" required>
               </td>
@@ -150,65 +154,224 @@
           </tbody>
         </table>
       </div>
-      <div class="d-flex justify-content-end">
-        <button class="btn btn-success" type="submit">Guardar y publicar</button>
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.querySelectorAll('#bulkAdd tbody input[type=checkbox]').forEach(cb => cb.checked = true)">Seleccionar todos</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.querySelectorAll('#bulkAdd tbody input[type=checkbox]').forEach(cb => cb.checked = false)">Deseleccionar</button>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-danger" type="submit" name="delete_mode" value="selected" onclick="return confirm('¿Eliminar las filas seleccionadas del listado a crear?');">Eliminar seleccionados</button>
+          <button class="btn btn-outline-danger" type="submit" name="delete_mode" value="all" onclick="return confirm('¿Eliminar todas las filas del listado a crear?');">Eliminar todo</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('main.products_admin_list') }}">Descartar cambios</a>
+          <button class="btn btn-success" type="submit">Guardar y publicar</button>
+        </div>
       </div>
     </form>
   </div>
  </div>
 {% endif %}
 
-<div class="table-responsive shadow-sm rounded">
-  <table class="table align-middle">
+<hr class="my-4">
+<h4 class="mb-3">Buscar y Editar Productos</h4>
+
+<form method="get" action="{{ url_for('main.products_admin_list') }}" class="row g-2 align-items-end mb-3">
+  <div class="col-12 col-md-4">
+    <label class="form-label">Búsqueda inteligente</label>
+    <input type="text" class="form-control" name="q" value="{{ q or '' }}" placeholder="Nombre, descripción o código...">
+  </div>
+  <div class="col-6 col-md-3">
+    <label class="form-label">Categoría</label>
+    <select class="form-select" name="category_id">
+      <option value="">Todas</option>
+      {% for root in roots %}
+        {% set children = root.children|sort(attribute='name') %}
+        {% if children %}
+          <optgroup label="{{ root.name }}">
+            {% for sub in children %}
+              <option value="{{ sub.id }}" {% if category_id and (category_id|string) == (sub.id|string) %}selected{% endif %}>{{ sub.name }}</option>
+            {% endfor %}
+          </optgroup>
+        {% else %}
+          <option value="{{ root.id }}" {% if category_id and (category_id|string) == (root.id|string) %}selected{% endif %}>{{ root.name }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-6 col-md-3">
+    <label class="form-label">Marca</label>
+    <select class="form-select" name="brand_id">
+      <option value="">Todas</option>
+      {% for b in brands %}
+        <option value="{{ b.id }}" {% if brand_id and (brand_id|string) == (b.id|string) %}selected{% endif %}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-6 col-md-2">
+    <label class="form-label">Por página</label>
+    <select class="form-select" name="per_page">
+      {% for size in [20, 50, 100] %}
+        <option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12 col-md-2 mt-2 mt-md-0">
+    <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
+  </div>
+</form>
+
+<form method="post" action="{{ url_for('main.products_admin_bulk_delete') }}">
+  <input type="hidden" name="q" value="{{ q or '' }}">
+  <input type="hidden" name="category_id" value="{{ category_id or '' }}">
+  <input type="hidden" name="brand_id" value="{{ brand_id or '' }}">
+  <input type="hidden" name="per_page" value="{{ per_page }}">
+  <input type="hidden" name="page" value="{{ page }}">
+
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="small text-muted">
+      {% if total %}{{ total }} producto(s) encontrados{% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.querySelectorAll('#productsTable tbody input[type=checkbox].row-select').forEach(cb => cb.checked = true)">Seleccionar todos</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.querySelectorAll('#productsTable tbody input[type=checkbox].row-select').forEach(cb => cb.checked = false)">Deseleccionar</button>
+      <button class="btn btn-danger btn-sm" type="submit" name="mode" value="selected" onclick="return confirm('¿Eliminar los productos seleccionados? Esta acción no se puede deshacer.');">Eliminar seleccionados</button>
+      <button class="btn btn-outline-danger btn-sm" type="submit" name="mode" value="all" onclick="return confirm('¿Eliminar TODOS los productos que coinciden con la búsqueda actual? Esta acción no se puede deshacer.');">Eliminar todo</button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.products_admin_list', q=q, category_id=category_id, brand_id=brand_id, per_page=per_page, page=page) }}">Descartar cambios</a>
+      <button form="inlineEditForm" class="btn btn-primary btn-sm" type="submit">Guardar cambios</button>
+    </div>
+  </div>
+
+  <div class="table-responsive shadow-sm rounded mb-2">
+  <table class="table align-middle" id="productsTable">
     <thead class="table-light">
       <tr>
+        <th style="width: 40px"></th>
         <th>Nombre</th>
         <th>SKU</th>
         <th>Precio</th>
         <th>Stock</th>
         <th>Marca</th>
         <th>Categoría</th>
-        <th style="width: 130px"></th>
+        <th>Imagen</th>
+        <th style="width: 160px"></th>
       </tr>
     </thead>
     <tbody>
-    {% for p, c in products %}
-      <tr>
-        <td>{{ p.name }}</td>
-        <td>{{ p.sku or '-' }}</td>
-        <td>
-          {% if p.price %}
-            {{ p.price|ar_currency }}
-          {% else %}-{% endif %}
-        </td>
-        <td>
-          <span class="badge {% if p.in_stock %}bg-success{% else %}bg-danger{% endif %}">
-            {% if p.in_stock %}En stock{% else %}Sin stock{% endif %}
-          </span>
-        </td>
-        <td>{{ p.brand.name if p.brand else '-' }}</td>
-        <td>{{ c.name if c else '-' }}</td>
-        <td class="text-end">
-          <form class="d-inline" method="post" action="{{ url_for('main.products_admin_feature_toggle', product_id=p.id) }}">
-            <input type="hidden" name="next" value="{{ request.path }}">
-            {% if p.featured %}
-              <button class="btn btn-sm btn-warning" type="submit" title="Quitar de destacados">Quitar dest.</button>
-            {% else %}
-              <button class="btn btn-sm btn-outline-warning" type="submit" title="Añadir a destacados">Destacar</button>
-            {% endif %}
-          </form>
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.products_admin_edit', product_id=p.id) }}">Editar</a>
-          <form class="d-inline" method="post" action="{{ url_for('main.products_admin_delete', product_id=p.id) }}" onsubmit="return confirm('¿Eliminar producto?');">
-            <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
-          </form>
-        </td>
-      </tr>
+    {% if products %}
+      {% for p, c in products %}
+        <tr>
+          <td class="text-center">
+            <input class="form-check-input row-select" type="checkbox" name="product_ids" value="{{ p.id }}">
+          </td>
+          <td>
+            <input form="inlineEditForm" type="text" name="items[{{ p.id }}][name]" class="form-control form-control-sm" value="{{ p.name }}">
+          </td>
+          <td>
+            <input form="inlineEditForm" type="text" name="items[{{ p.id }}][sku]" class="form-control form-control-sm" value="{{ p.sku or '' }}">
+          </td>
+          <td>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">$</span>
+              <input form="inlineEditForm" type="text" name="items[{{ p.id }}][price]" class="form-control form-control-sm" value="{% if p.price %}{{ p.price }}{% endif %}" placeholder="0,00">
+            </div>
+          </td>
+          <td class="text-center">
+            <input form="inlineEditForm" class="form-check-input" type="checkbox" name="items[{{ p.id }}][in_stock]" {% if p.in_stock %}checked{% endif %}>
+          </td>
+          <td>
+            <select form="inlineEditForm" class="form-select form-select-sm" name="items[{{ p.id }}][brand_id]">
+              <option value="" {% if not p.brand_id %}selected{% endif %}>- Sin marca -</option>
+              {% for b in brands %}
+                <option value="{{ b.id }}" {% if p.brand_id and (p.brand_id|string) == (b.id|string) %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select form="inlineEditForm" class="form-select form-select-sm" name="items[{{ p.id }}][category_id]">
+              <option value="" {% if not p.category_id %}selected{% endif %}>- Sin categoría -</option>
+              {% for root in roots %}
+                {% set children = root.children|sort(attribute='name') %}
+                {% if children %}
+                  <optgroup label="{{ root.name }}">
+                    {% for sub in children %}
+                      <option value="{{ sub.id }}" {% if p.category_id and (p.category_id|string) == (sub.id|string) %}selected{% endif %}>{{ sub.name }}</option>
+                    {% endfor %}
+                  </optgroup>
+                {% else %}
+                  <option value="{{ root.id }}" {% if p.category_id and (p.category_id|string) == (root.id|string) %}selected{% endif %}>{{ root.name }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </td>
+          <td class="text-end">
+          <td>
+            <div class="d-flex flex-column gap-1">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                {% if p.image_filename %}
+                  <img src="{{ url_for('static', filename='img/products/' ~ p.image_filename) }}" alt="{{ p.name }}" class="img-thumbnail" style="width: 50px; height: 50px; object-fit: contain;">
+                {% endif %}
+                {% for img in p.images %}
+                  <img src="{{ url_for('static', filename='img/products/' ~ img.filename) }}" alt="{{ p.name }}" class="img-thumbnail" style="width: 40px; height: 40px; object-fit: contain;">
+                {% endfor %}
+              </div>
+              <input form="inlineEditForm" type="file" name="images_{{ p.id }}[]" accept="image/*" multiple class="form-control form-control-sm">
+              <small class="text-muted">Podés seleccionar varias imágenes a la vez (máx. 10 por producto).</small>
+            </div>
+          </td>
+          <td class="text-end">
+            <form class="d-inline" method="post" action="{{ url_for('main.products_admin_feature_toggle', product_id=p.id) }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              {% if p.featured %}
+                <button class="btn btn-sm btn-warning" type="submit" title="Quitar de destacados">Quitar dest.</button>
+              {% else %}
+                <button class="btn btn-sm btn-outline-warning" type="submit" title="Añadir a destacados">Destacar</button>
+              {% endif %}
+            </form>
+            <form class="d-inline" method="post" action="{{ url_for('main.products_admin_delete', product_id=p.id) }}" onsubmit="return confirm('¿Eliminar este producto?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
     {% else %}
       <tr>
-        <td colspan="7" class="text-center text-muted">No hay productos aún.</td>
+        <td colspan="7" class="text-center text-muted">No hay productos que coincidan con la búsqueda.</td>
       </tr>
-    {% endfor %}
+    {% endif %}
     </tbody>
   </table>
+
 </div>
+
+</form>
+
+<form id="inlineEditForm" method="post" action="{{ url_for('main.products_admin_inline_update') }}" enctype="multipart/form-data">
+  <input type="hidden" name="q" value="{{ q or '' }}">
+  <input type="hidden" name="category_id" value="{{ category_id or '' }}">
+  <input type="hidden" name="brand_id" value="{{ brand_id or '' }}">
+  <input type="hidden" name="per_page" value="{{ per_page }}">
+  <input type="hidden" name="page" value="{{ page }}">
+</form>
+
+{% if pages and pages > 1 %}
+<nav aria-label="Paginación productos" class="d-flex justify-content-between align-items-center">
+  <ul class="pagination mb-0">
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('main.products_admin_list', q=q, category_id=category_id, brand_id=brand_id, per_page=per_page, page=page-1) }}">Anterior</a>
+    </li>
+    <li class="page-item disabled"><span class="page-link">Página {{ page }} de {{ pages }}</span></li>
+    <li class="page-item {% if page >= pages %}disabled{% endif %}">
+      <a class="page-link" href="{{ url_for('main.products_admin_list', q=q, category_id=category_id, brand_id=brand_id, per_page=per_page, page=page+1) }}">Siguiente</a>
+    </li>
+  </ul>
+  <form class="d-flex align-items-center gap-2" method="get" action="{{ url_for('main.products_admin_list') }}">
+    <input type="hidden" name="q" value="{{ q or '' }}">
+    <input type="hidden" name="category_id" value="{{ category_id or '' }}">
+    <input type="hidden" name="brand_id" value="{{ brand_id or '' }}">
+    <input type="hidden" name="per_page" value="{{ per_page }}">
+    <label class="mb-0">Ir a página</label>
+    <input type="number" min="1" max="{{ pages }}" name="page" class="form-control form-control-sm" style="width: 90px;">
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Ir</button>
+  </form>
+</nav>
+{% endif %}
 {% endblock %}
