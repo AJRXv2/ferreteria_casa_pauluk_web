@@ -27,11 +27,11 @@ body { background: #f8f9fa; }
 
 /* Aumentar tamaño del texto de marca */
 .navbar-brand span { font-size: 1.75rem; line-height: 1.1; }
+
 @media (max-width: 576px) {
 	.navbar-brand span { font-size: 1.4rem; }
 }
 
-/* Pestañas del navbar más grandes y con recuadro semitransparente (solo nivel superior) */
 .navbar .navbar-nav > .nav-item { margin: 0 .125rem; }
 .navbar .navbar-nav > .nav-item > .nav-link {
 	font-weight: 700;
@@ -135,14 +135,10 @@ body { background: #f8f9fa; }
 	animation: navbar-logos-scroll 55s linear infinite;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 576px) {
 	.navbar-pattern {
-		background-position: 0 -20px;
-		padding-top: .45rem;
-		padding-bottom: .45rem;
-	}
-	.brand-logo {
-		margin-top: -6px;
+		background-size: auto 80px;
+		background-position: 0 -52px;
 	}
 }
 
@@ -190,17 +186,17 @@ body { background: #f8f9fa; }
 	.scroller-btn-right { right: .25rem; }
 }
 
-	.product-detail-hero {
-		min-height: 420px;
-		position: relative;
-		background: #fff;
-	}
-	.product-detail-hero img {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
-		background: #f8f9fa;
-	}
+.product-detail-hero {
+	min-height: 420px;
+	position: relative;
+	background: #fff;
+}
+.product-detail-hero img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	background: #f8f9fa;
+}
 	.product-gallery-thumb {
 		width: 90px;
 		height: 90px;
