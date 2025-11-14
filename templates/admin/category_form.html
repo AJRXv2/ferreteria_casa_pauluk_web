@@ -9,7 +9,7 @@
 
     <div class="mb-3">
       <label class="form-label d-block">Padre (opcional)</label>
-      <input type="hidden" name="parent_id" id="parent_id" value="{{ category.parent_id if category else '' }}">
+  <input type="hidden" name="parent_id" id="parent_id" value="{{ category.parent_id if category and category.parent_id else '' }}">
       <div class="btn-group flex-wrap parent-picker" role="group" aria-label="Selector de padre">
         <button type="button" class="btn btn-outline-secondary" data-parent-id="">Sin padre</button>
         {% for root in roots %}
