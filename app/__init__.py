@@ -36,26 +36,29 @@ def create_app():
 
     # Opcional: enlazar subcarpetas de static/img a un volumen persistente (UPLOAD_ROOT)
     def _link_static_to_volume_if_configured():
+        """Enlaza carpetas de imágenes a un volumen persistente si está habilitado.
+        Registra logs detallados para diagnosticar problemas de montaje o permisos."""
         try:
             enabled = os.getenv("ENABLE_UPLOAD_VOLUME_LINKS", "false").lower() == "true"
             upload_root = os.getenv("UPLOAD_ROOT")
             if not enabled or not upload_root:
+                app.logger.info(f"[uploads-volume] deshabilitado (ENABLE_UPLOAD_VOLUME_LINKS={enabled}, UPLOAD_ROOT={upload_root})")
                 return
-            img_src = os.path.join(app.static_folder, 'img')
-            # Crear destino y subcarpetas
-            subdirs = ['products', 'slides', 'consultas', 'brands']
+            img_src = os.path.join(app.static_folder, "img")
+            app.logger.info(f"[uploads-volume] inicio enlace. upload_root={upload_root} img_src={img_src}")
+            subdirs = ["products", "slides", "consultas", "brands"]
             os.makedirs(upload_root, exist_ok=True)
             for name in subdirs:
                 os.makedirs(os.path.join(upload_root, name), exist_ok=True)
-            # Si destino está vacío y origen tiene archivos, copiar semilla
+            app.logger.info(f"[uploads-volume] subdirs asegurados: {', '.join(subdirs)}")
+            # Copiar semilla si volumen recién creado
             try:
-                if len(os.listdir(upload_root)) == 0 and os.path.isdir(img_src):
+                if not any(os.scandir(upload_root)) and os.path.isdir(img_src):
                     import shutil
                     for name in subdirs:
                         s = os.path.join(img_src, name)
                         d = os.path.join(upload_root, name)
-                        if os.path.isdir(s) and len(os.listdir(d)) == 0:
-                            # copiar contenido inicial
+                        if os.path.isdir(s) and not any(os.scandir(d)):
                             for entry in os.listdir(s):
                                 sp = os.path.join(s, entry)
                                 dp = os.path.join(d, entry)
@@ -64,41 +67,57 @@ def create_app():
                                         shutil.copytree(sp, dp, dirs_exist_ok=True)
                                     else:
                                         shutil.copy2(sp, dp)
-                                except Exception:
-                                    pass
-            except Exception:
-                pass
-            # Crear enlaces simbólicos para que /static/img/<subdir> apunte al volumen
+                                    app.logger.info(f"[uploads-volume] semilla copiada {sp} -> {dp}")
+                                except Exception as ce:
+                                    app.logger.warning(f"[uploads-volume] fallo copiando semilla {sp}: {ce}")
+            except Exception as e_seed:
+                app.logger.warning(f"[uploads-volume] error fase semilla: {e_seed}")
+            # Crear / reemplazar enlaces
             for name in subdirs:
                 target = os.path.join(upload_root, name)
                 link_path = os.path.join(img_src, name)
                 try:
                     if os.path.islink(link_path):
-                        # actualizar si apunta a otro lado
                         cur = os.readlink(link_path)
                         if cur != target:
                             os.unlink(link_path)
                             os.symlink(target, link_path)
+                            app.logger.info(f"[uploads-volume] symlink actualizado {link_path} -> {target}")
+                        else:
+                            app.logger.info(f"[uploads-volume] symlink OK {link_path} -> {cur}")
                     else:
-                        # si existe como carpeta, intentar reemplazar sólo si está vacía
-                        if os.path.isdir(link_path) and len(os.listdir(link_path)) == 0:
+                        # Si existe carpeta, copiar su contenido al volumen y reemplazar por symlink
+                        if os.path.isdir(link_path):
+                            import shutil
                             try:
-                                os.rmdir(link_path)
-                            except Exception:
-                                pass
-                        if not os.path.exists(link_path):
+                                for entry in os.listdir(link_path):
+                                    src_entry = os.path.join(link_path, entry)
+                                    dst_entry = os.path.join(target, entry)
+                                    try:
+                                        if os.path.isdir(src_entry):
+                                            shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
+                                        else:
+                                            shutil.copy2(src_entry, dst_entry)
+                                    except Exception as ce2:
+                                        app.logger.warning(f"[uploads-volume] fallo copiando {src_entry}: {ce2}")
+                                backup_path = link_path + ".bak_initial"
+                                if not os.path.exists(backup_path):
+                                    os.rename(link_path, backup_path)
+                                    app.logger.info(f"[uploads-volume] carpeta original renombrada a {backup_path}")
+                            except Exception as e_copy:
+                                app.logger.warning(f"[uploads-volume] error copiando contenido previo {link_path}: {e_copy}")
+                        if not os.path.exists(target):
+                            os.makedirs(target, exist_ok=True)
+                        if not os.path.islink(link_path):
                             os.symlink(target, link_path)
-                except Exception:
-                    # En Windows o entornos sin permisos, ignorar silenciosamente
-                    pass
-        except Exception:
-            pass
-
+                            app.logger.info(f"[uploads-volume] symlink creado {link_path} -> {target}")
+                except Exception as e_link:
+                    app.logger.warning(f"[uploads-volume] fallo symlink {link_path}: {e_link}")
+        except Exception as e_outer:
+            app.logger.warning(f"[uploads-volume] error general enlace: {e_outer}")
     _link_static_to_volume_if_configured()
-
-    # Seed categorías base si no existen (solo si la tabla ya existe)
     with app.app_context():
-        from .models import Category, User, SiteInfo  # noqa: E402
+        from .models import Category, User, SiteInfo  # restaurar import perdido para seed y contexto
 
         @app.context_processor
         def inject_nav_categories():
