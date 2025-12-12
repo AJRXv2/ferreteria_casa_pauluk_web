@@ -225,12 +225,20 @@ def create_app():
             if inspect(db.engine).has_table("users"):
                 try:
                     from sqlalchemy.exc import IntegrityError
-                    exists = User.query.filter_by(username="admin").first()
-                    if not exists:
-                        admin = User(username="admin", is_admin=True)
-                        admin.set_password("admin123")
-                        db.session.add(admin)
-                        db.session.commit()
+                    target_user = User.query.filter_by(username="PaulukN").first()
+                    if not target_user:
+                        # Si existe el usuario 'admin' viejo, lo actualizamos
+                        old_admin = User.query.filter_by(username="admin").first()
+                        if old_admin:
+                            old_admin.username = "PaulukN"
+                            old_admin.set_password("RRA2000")
+                            db.session.commit()
+                        else:
+                            # Si no, creamos el nuevo
+                            new_user = User(username="PaulukN", is_admin=True)
+                            new_user.set_password("RRA2000")
+                            db.session.add(new_user)
+                            db.session.commit()
                 except IntegrityError:
                     # Otro worker pudo crearlo en paralelo; ignorar
                     try:
