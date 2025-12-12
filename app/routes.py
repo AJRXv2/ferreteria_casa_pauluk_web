@@ -1086,7 +1086,45 @@ def products_admin_preview_edit(row_index):
         gallery_display=gallery_entries,
         gallery_context="preview",
         gallery_context_id=row_index,
+        gallery_reorder_endpoint=url_for("main.products_preview_gallery_reorder", row_index=row_index),
     )
+
+
+@bp.route("/admin/products/bulk/preview/<int:row_index>/gallery-reorder", methods=["POST"])
+@admin_required
+def products_preview_gallery_reorder(row_index):
+    rows = _get_bulk_preview_rows()
+    if not rows or row_index < 0 or row_index >= len(rows):
+        return jsonify(success=False, message="Borrador no encontrado."), 404
+
+    data = request.get_json(silent=True) or {}
+    order = data.get("order") or []
+    if not isinstance(order, list) or not order:
+        return jsonify(success=False, message="Orden inválido."), 400
+
+    row = rows[row_index]
+    gallery_list = list(row.get("gallery_images") or [])
+    if not gallery_list and row.get("image_filename"):
+        gallery_list.append(row.get("image_filename"))
+
+    current = [str(x) for x in gallery_list]
+    requested = [str(x) for x in order]
+    if set(requested) != set(current):
+        return jsonify(success=False, message="La lista de imágenes no coincide con el borrador actual."), 400
+
+    new_gallery = []
+    used = set()
+    for item in requested:
+        if item in used:
+            continue
+        new_gallery.append(item)
+        used.add(item)
+
+    row["gallery_images"] = new_gallery[:MAX_GALLERY_IMAGES]
+    row["image_filename"] = row["gallery_images"][0] if row["gallery_images"] else None
+    rows[row_index] = row
+    _set_bulk_preview_rows(rows)
+    return jsonify(success=True, message="Orden actualizado."), 200
 
 
 @bp.route("/admin/products/bulk-delete", methods=["POST"])
@@ -1882,10 +1920,34 @@ def products_admin_edit(product_id):
         form_action=url_for("main.products_admin_edit", product_id=p.id),
         title="Editar producto",
         max_gallery_images=MAX_GALLERY_IMAGES,
-        gallery_display=_gallery_display_entries(p.image_filename, p.images),
+        gallery_display=_gallery_display_entries(p.images),
         gallery_context="product",
         gallery_context_id=str(p.id),
+        gallery_reorder_endpoint=url_for("main.products_gallery_reorder", product_id=p.id),
     )
+
+
+@bp.route("/admin/products/<uuid:product_id>/gallery-reorder", methods=["POST"])
+@admin_required
+def products_gallery_reorder(product_id):
+    product = Product.query.get_or_404(product_id)
+    data = request.get_json(silent=True) or {}
+    order = data.get("order") or []
+    if not isinstance(order, list) or not order:
+        return jsonify(success=False, message="Orden inválido."), 400
+
+    images_by_id = {str(img.id): img for img in list(product.images or [])}
+    expected = set(images_by_id.keys())
+    requested = [str(x) for x in order]
+    if set(requested) != expected:
+        return jsonify(success=False, message="La lista de imágenes no coincide con la galería actual."), 400
+
+    for pos, image_id in enumerate(requested, start=1):
+        images_by_id[image_id].position = pos
+
+    _sync_primary_image_from_gallery(product)
+    db.session.commit()
+    return jsonify(success=True, message="Orden actualizado."), 200
 
 # --- Helper imagen producto ---
 def _download_image_from_url(image_url):
@@ -2023,43 +2085,28 @@ def _build_preview_gallery_entries(filenames):
             SimpleNamespace(
                 filename=fn,
                 origin="session",
-                image_id=None,
+                image_id=fn,
                 remove_token=_make_gallery_remove_token("session", fn),
             )
         )
     return entries
 
 
-def _gallery_display_entries(primary_filename, gallery_records):
-    entries = []
-    seen = set()
-    if primary_filename:
-        entries.append(
-            SimpleNamespace(
-                filename=primary_filename,
-                origin="primary",
-                image_id=None,
-                remove_token=_make_gallery_remove_token("primary", primary_filename),
-            )
-        )
-        seen.add(primary_filename)
+def _gallery_display_entries(gallery_records):
     ordered = sorted(
         (img for img in (gallery_records or []) if getattr(img, "filename", None)),
         key=lambda img: (img.position or 0),
     )
+    entries = []
     for img in ordered:
-        fn = img.filename
-        if fn in seen:
-            continue
         entries.append(
             SimpleNamespace(
-                filename=fn,
+                filename=img.filename,
                 origin="gallery",
                 image_id=str(img.id),
                 remove_token=_make_gallery_remove_token("gallery", str(img.id)),
             )
         )
-        seen.add(fn)
     return entries
 
 def _save_slide_image(file_storage):

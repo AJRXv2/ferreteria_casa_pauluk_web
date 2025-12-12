@@ -4,6 +4,7 @@
 {% set cancel_href = cancel_url or url_for('main.products_admin_list') %}
 {% set gallery_context = gallery_context or 'none' %}
 {% set gallery_context_id = gallery_context_id or '' %}
+{% set gallery_reorder_endpoint = gallery_reorder_endpoint or '' %}
 <form
   id="productForm"
   method="post"
@@ -11,7 +12,8 @@
   enctype="multipart/form-data"
   data-gallery-url-endpoint="{{ url_for('main.products_gallery_url_upload') }}"
   data-gallery-context="{{ gallery_context }}"
-  data-gallery-context-id="{{ gallery_context_id }}">
+  data-gallery-context-id="{{ gallery_context_id }}"
+  data-gallery-reorder-endpoint="{{ gallery_reorder_endpoint }}">
   <div class="row g-3">
     <div class="col-12 col-md-6">
       <label class="form-label">Nombre</label>
@@ -99,10 +101,10 @@
           <div class="form-text">Las casillas vacías se ignoran automáticamente.</div>
           <div id="galleryUrlStatus" class="mt-2"></div>
         </div>
-        <div class="d-flex flex-wrap gap-2 mt-3 gallery-thumb-pool{% if not gallery_display %} d-none{% endif %}" id="currentGalleryThumbnails">
+        <div class="d-flex flex-wrap gap-2 mt-3 gallery-thumb-pool{% if not gallery_display %} d-none{% endif %}" id="currentGalleryThumbnails" data-gallery-sortable="true">
           {% if gallery_display %}
             {% for img in gallery_display %}
-              <div class="gallery-thumb-card">
+              <div class="gallery-thumb-card" draggable="true" data-gallery-sort-id="{{ img.image_id or img.filename }}">
                 <div class="ratio ratio-1x1 gallery-thumb-img-wrapper">
                   <img src="{{ url_for('static', filename='img/products/' + img.filename) }}" alt="{{ product.name }}" class="img-fluid gallery-thumb-img">
                 </div>
@@ -113,7 +115,7 @@
             {% endfor %}
           {% endif %}
         </div>
-        <div class="form-text" id="currentGalleryHelp">Subí imágenes adicionales para la galería y usá los botones "Quitar" cuando quieras remover alguna. El sistema mantendrá el orden actual (la primera imagen será la principal).</div>
+        <div class="form-text" id="currentGalleryHelp">Arrastrá y soltá las imágenes para reordenarlas (la primera imagen será la principal). También podés usar "Quitar" para remover alguna.</div>
     </div>
 
     <div class="col-12">

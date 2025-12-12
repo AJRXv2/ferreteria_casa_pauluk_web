@@ -306,6 +306,15 @@ body { background: #f8f9fa; }
 	display: flex;
 	flex-direction: column;
 	gap: .4rem;
+	cursor: grab;
+}
+.gallery-thumb-card:active { cursor: grabbing; }
+.gallery-thumb-card.is-dragging {
+	opacity: .6;
+}
+.gallery-thumb-card.drag-over {
+	outline: 2px dashed rgba(var(--brand-accent-rgb), .65);
+	outline-offset: 2px;
 }
 .gallery-thumb-img-wrapper {
 	overflow: hidden;

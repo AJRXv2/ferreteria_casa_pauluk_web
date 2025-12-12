@@ -236,29 +236,120 @@ document.addEventListener('DOMContentLoaded', () => {
   const galleryInput = document.querySelector('[data-gallery-input="true"]');
   const galleryPreview = document.getElementById('galleryPreview');
   if (galleryInput && galleryPreview) {
-    let galleryUrls = [];
-    const clearUrls = () => {
-      galleryUrls.forEach((url) => URL.revokeObjectURL(url));
-      galleryUrls = [];
+    let selectedFiles = [];
+    let objectUrls = [];
+    let draggingPreviewCard = null;
+
+    const clearPreviewUrls = () => {
+      objectUrls.forEach((url) => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      });
+      objectUrls = [];
     };
-    galleryInput.addEventListener('change', () => {
-      clearUrls();
+
+    const syncInputFiles = () => {
+      try {
+        const dt = new DataTransfer();
+        selectedFiles.forEach((f) => dt.items.add(f));
+        galleryInput.files = dt.files;
+      } catch (_) {
+        // Si el navegador no soporta DataTransfer asignable, queda solo el preview visual.
+      }
+    };
+
+    const renderSelectedFiles = () => {
+      clearPreviewUrls();
       galleryPreview.innerHTML = '';
-      const files = Array.from(galleryInput.files || []);
-      if (!files.length) {
+      if (!selectedFiles.length) {
         galleryPreview.classList.add('d-none');
         return;
       }
       galleryPreview.classList.remove('d-none');
-      files.forEach((file) => {
+
+      selectedFiles.forEach((file, index) => {
         const url = URL.createObjectURL(file);
-        galleryUrls.push(url);
+        objectUrls.push(url);
+
+        const card = document.createElement('div');
+        card.className = 'gallery-thumb-card gallery-preview-card';
+        card.setAttribute('draggable', 'true');
+        card.dataset.previewIndex = String(index);
+
+        const ratio = document.createElement('div');
+        ratio.className = 'ratio ratio-1x1 gallery-thumb-img-wrapper';
         const img = document.createElement('img');
         img.src = url;
         img.alt = file.name || 'Imagen seleccionada';
-        img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
-        galleryPreview.appendChild(img);
+        img.className = 'img-fluid gallery-thumb-img';
+        ratio.appendChild(img);
+        card.appendChild(ratio);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-outline-secondary btn-sm w-100';
+        removeBtn.textContent = 'Quitar';
+        removeBtn.addEventListener('click', () => {
+          selectedFiles.splice(index, 1);
+          syncInputFiles();
+          renderSelectedFiles();
+        });
+        card.appendChild(removeBtn);
+
+        galleryPreview.appendChild(card);
       });
+    };
+
+    const cardFromEvent = (ev) => ev && ev.target && ev.target.closest && ev.target.closest('.gallery-preview-card');
+
+    galleryPreview.addEventListener('dragstart', (ev) => {
+      const card = cardFromEvent(ev);
+      if (!card) return;
+      draggingPreviewCard = card;
+      card.classList.add('is-dragging');
+      try {
+        ev.dataTransfer.effectAllowed = 'move';
+      } catch (_) {}
+    });
+
+    galleryPreview.addEventListener('dragend', () => {
+      if (draggingPreviewCard) draggingPreviewCard.classList.remove('is-dragging');
+      draggingPreviewCard = null;
+      galleryPreview.querySelectorAll('.drag-over').forEach((n) => n.classList.remove('drag-over'));
+    });
+
+    galleryPreview.addEventListener('dragover', (ev) => {
+      if (!draggingPreviewCard) return;
+      ev.preventDefault();
+      const over = cardFromEvent(ev);
+      if (!over || over === draggingPreviewCard) return;
+      over.classList.add('drag-over');
+    });
+
+    galleryPreview.addEventListener('dragleave', (ev) => {
+      const over = cardFromEvent(ev);
+      if (!over) return;
+      over.classList.remove('drag-over');
+    });
+
+    galleryPreview.addEventListener('drop', (ev) => {
+      if (!draggingPreviewCard) return;
+      ev.preventDefault();
+      const target = cardFromEvent(ev);
+      if (!target || target === draggingPreviewCard) return;
+
+      const fromIndex = Number(draggingPreviewCard.dataset.previewIndex);
+      const toIndex = Number(target.dataset.previewIndex);
+      if (Number.isNaN(fromIndex) || Number.isNaN(toIndex)) return;
+
+      const moved = selectedFiles.splice(fromIndex, 1)[0];
+      selectedFiles.splice(toIndex, 0, moved);
+      syncInputFiles();
+      renderSelectedFiles();
+    });
+
+    galleryInput.addEventListener('change', () => {
+      selectedFiles = Array.from(galleryInput.files || []);
+      renderSelectedFiles();
     });
   }
 
@@ -286,12 +377,100 @@ document.addEventListener('DOMContentLoaded', () => {
     const galleryEndpoint = productForm.dataset.galleryUrlEndpoint;
     const galleryContext = productForm.dataset.galleryContext;
     const galleryContextId = productForm.dataset.galleryContextId;
+    const galleryReorderEndpoint = productForm.dataset.galleryReorderEndpoint;
     const galleryUrlInputs = Array.from(productForm.querySelectorAll('.gallery-url-input'));
     const galleryStatus = document.getElementById('galleryUrlStatus');
     const galleryThumbs = document.getElementById('currentGalleryThumbnails');
     const clearGalleryBtn = productForm.querySelector('[data-clear-gallery="true"]');
     const deleteProductBtn = productForm.querySelector('[data-delete-product="true"]');
     let galleryUploadInFlight = false;
+
+    const parseRemoveTokenPayload = (token) => {
+      if (!token || typeof token !== 'string') return null;
+      const parts = token.split('|');
+      if (parts.length < 2) return null;
+      return parts.slice(1).join('|');
+    };
+
+    const persistGalleryOrder = async () => {
+      if (!galleryReorderEndpoint || !galleryThumbs) return;
+      const cards = Array.from(galleryThumbs.querySelectorAll('.gallery-thumb-card'));
+      const order = cards
+        .map((c) => c.dataset.gallerySortId)
+        .filter((v) => v && v.trim().length);
+      if (!order.length) return;
+      try {
+        await fetch(galleryReorderEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ order }),
+        });
+      } catch (_) {
+        // Silencioso: si falla, el usuario puede reintentar moviendo otra vez
+      }
+    };
+
+    const enableGalleryDragSort = () => {
+      if (!galleryThumbs || galleryThumbs.dataset.dragSortBound === '1') return;
+      if (!galleryReorderEndpoint) return;
+
+      let dragging = null;
+
+      const isDraggableCard = (el) => el && el.classList && el.classList.contains('gallery-thumb-card');
+
+      galleryThumbs.addEventListener('dragstart', (ev) => {
+        const card = ev.target && ev.target.closest && ev.target.closest('.gallery-thumb-card');
+        if (!isDraggableCard(card)) return;
+        dragging = card;
+        card.classList.add('is-dragging');
+        try {
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', card.dataset.gallerySortId || '');
+        } catch (_) {}
+      });
+
+      galleryThumbs.addEventListener('dragend', () => {
+        if (dragging) dragging.classList.remove('is-dragging');
+        dragging = null;
+        galleryThumbs.querySelectorAll('.drag-over').forEach((n) => n.classList.remove('drag-over'));
+      });
+
+      galleryThumbs.addEventListener('dragover', (ev) => {
+        if (!dragging) return;
+        ev.preventDefault();
+        const over = ev.target && ev.target.closest && ev.target.closest('.gallery-thumb-card');
+        if (!isDraggableCard(over) || over === dragging) return;
+        over.classList.add('drag-over');
+      });
+
+      galleryThumbs.addEventListener('dragleave', (ev) => {
+        const over = ev.target && ev.target.closest && ev.target.closest('.gallery-thumb-card');
+        if (!isDraggableCard(over)) return;
+        over.classList.remove('drag-over');
+      });
+
+      galleryThumbs.addEventListener('drop', async (ev) => {
+        if (!dragging) return;
+        ev.preventDefault();
+        const target = ev.target && ev.target.closest && ev.target.closest('.gallery-thumb-card');
+        if (!isDraggableCard(target) || target === dragging) return;
+
+        const rect = target.getBoundingClientRect();
+        const before = ev.clientX < rect.left + rect.width / 2;
+        if (before) {
+          galleryThumbs.insertBefore(dragging, target);
+        } else {
+          galleryThumbs.insertBefore(dragging, target.nextSibling);
+        }
+        target.classList.remove('drag-over');
+        await persistGalleryOrder();
+      });
+
+      galleryThumbs.dataset.dragSortBound = '1';
+    };
 
     const attachRemovalConfirm = (button) => {
       if (!button || button.dataset.boundConfirm === '1') return;
@@ -339,6 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
       galleryThumbs.classList.remove('d-none');
       const card = document.createElement('div');
       card.className = 'gallery-thumb-card';
+      card.setAttribute('draggable', 'true');
       const ratio = document.createElement('div');
       ratio.className = 'ratio ratio-1x1 gallery-thumb-img-wrapper';
       const img = document.createElement('img');
@@ -347,6 +527,10 @@ document.addEventListener('DOMContentLoaded', () => {
       img.className = 'img-fluid gallery-thumb-img';
       ratio.appendChild(img);
       card.appendChild(ratio);
+      const sortId = parseRemoveTokenPayload(removeToken);
+      if (sortId) {
+        card.dataset.gallerySortId = sortId;
+      }
       if (removeToken) {
         const removeBtn = document.createElement('button');
         removeBtn.type = 'submit';
@@ -359,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
         card.appendChild(removeBtn);
       }
       galleryThumbs.appendChild(card);
+      enableGalleryDragSort();
     };
 
     const handleGalleryUrlUpload = async (input) => {
@@ -414,5 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
         handleGalleryUrlUpload(input);
       });
     });
+
+    enableGalleryDragSort();
   }
 });
