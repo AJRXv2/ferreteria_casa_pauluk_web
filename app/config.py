@@ -28,3 +28,4 @@ class Config:
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
     SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
     SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    STORE_TIMEZONE = os.getenv("STORE_TIMEZONE", "America/Argentina/Cordoba")

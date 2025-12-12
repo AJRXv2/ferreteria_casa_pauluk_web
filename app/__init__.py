@@ -179,7 +179,16 @@ def create_app():
             from datetime import datetime
             from .models import SiteInfo
             si = SiteInfo.query.first()
-            now = datetime.now()
+            tz_name = app.config.get("STORE_TIMEZONE")
+            tzinfo = None
+            if tz_name:
+                try:
+                    from zoneinfo import ZoneInfo  # Python 3.9+
+                    tzinfo = ZoneInfo(tz_name)
+                except Exception as tz_exc:
+                    app.logger.warning(f"Zona horaria {tz_name} inválida: {tz_exc}")
+                    tzinfo = None
+            now = datetime.now(tzinfo) if tzinfo else datetime.now()
             status = None
             # Intento simple: buscar patrones HH:MM en si.hours y decidir abierto si uno coincide
             def parse_ranges(text):

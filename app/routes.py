@@ -1,20 +1,29 @@
 import uuid
 import json
+import re
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 import os
 import base64
 import mimetypes
 import random
+from io import BytesIO
 from types import SimpleNamespace
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response, session
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.datastructures import FileStorage
 from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta, ProductImage
-from sqlalchemy.exc import ProgrammingError, OperationalError
+from sqlalchemy.exc import ProgrammingError, OperationalError, IntegrityError
 from sqlalchemy import or_
 from . import db, slugify
 
 bp = Blueprint("main", __name__)
+
+ALLOWED_PRODUCT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_REMOTE_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_GALLERY_IMAGES = 10
 
 
 def _get_bulk_preview_rows():
@@ -765,6 +774,8 @@ def products_admin_list():
                     "in_stock": base["in_stock"],
                     "category_id": base["category_id"],
                     "brand_id": request.form.get("brand_id") or "",
+                    "image_filename": None,
+                    "gallery_images": [],
                 })
             _set_bulk_preview_rows(preview_rows)
             # Render sin redirigir, misma página con la tabla editable
@@ -801,6 +812,8 @@ def products_admin_list():
                     "in_stock": bool(row.get("in_stock", True)),
                     "category_id": row.get("category_id") or "",
                     "brand_id": row.get("brand_id") or "",
+                    "image_filename": None,
+                    "gallery_images": [],
                 })
             if not preview_rows:
                 flash("No se encontraron productos válidos en el Excel subido.", "warning")
@@ -858,9 +871,13 @@ def products_admin_list():
                         price = None
                 brand_id_raw = request.form.get(f"items[{i}][brand_id]") or None
                 brand_id = uuid.UUID(brand_id_raw) if brand_id_raw else None
-                # Imagen
-                image_file = request.files.get(f"image_{i}")
-                image_filename = _save_product_image(image_file)
+                row_meta = preview_rows[i] if preview_rows and i < len(preview_rows) else {}
+                gallery_filenames = list(row_meta.get("gallery_images") or [])
+                if not gallery_filenames and row_meta and row_meta.get("image_filename"):
+                    gallery_filenames.append(row_meta.get("image_filename"))
+                if gallery_filenames:
+                    gallery_filenames = gallery_filenames[:MAX_GALLERY_IMAGES]
+                primary_image = gallery_filenames[0] if gallery_filenames else (row_meta.get("image_filename") if row_meta else None)
                 p = Product(
                     name=name,
                     sku=sku,
@@ -868,15 +885,41 @@ def products_admin_list():
                     in_stock=in_stock,
                     category_id=category_id,
                     brand_id=brand_id,
-                    image_filename=image_filename,
+                    image_filename=primary_image,
                 )
                 db.session.add(p)
+                if gallery_filenames:
+                    for position, filename in enumerate(gallery_filenames, start=1):
+                        db.session.add(ProductImage(product=p, filename=filename, position=position))
                 created += 1
-            if created:
-                db.session.commit()
-                flash(f"{created} producto(s) creados", "success")
-            else:
+            if not created:
                 flash("No se crearon productos. Revisá los datos.", "warning")
+                _clear_bulk_preview_rows()
+                return redirect(url_for("main.products_admin_list"))
+
+            try:
+                db.session.commit()
+            except IntegrityError as exc:
+                db.session.rollback()
+                detail = ""
+                orig = getattr(exc, "orig", None)
+                if orig is not None:
+                    diag = getattr(orig, "diag", None)
+                    detail = getattr(diag, "detail", None) or str(orig)
+                else:
+                    detail = str(exc)
+                sku_value = None
+                if detail:
+                    match = re.search(r"\(sku\)=\(([^)]+)\)", detail, re.IGNORECASE)
+                    if match:
+                        sku_value = match.group(1)
+                if sku_value:
+                    flash(f"No se pudieron crear los productos porque el SKU {sku_value} ya existe. Editá esa fila y volvé a intentar.", "danger")
+                else:
+                    flash("No se pudieron crear los productos: algunos SKU ya existen o están repetidos.", "danger")
+                return redirect(url_for("main.products_admin_list"))
+
+            flash(f"{created} producto(s) creados", "success")
             _clear_bulk_preview_rows()
         # Tras guardar, recargar búsqueda actualizada (primer página)
         return redirect(url_for("main.products_admin_list"))
@@ -908,6 +951,34 @@ def products_admin_preview_edit(row_index):
 
     current = rows[row_index]
     if request.method == "POST":
+        remove_token = request.form.get("remove_gallery_token")
+        clear_gallery = request.form.get("clear_gallery")
+        if remove_token or clear_gallery:
+            gallery_list = list(current.get("gallery_images") or [])
+            if not gallery_list and current.get("image_filename"):
+                gallery_list.append(current.get("image_filename"))
+            if clear_gallery == "1":
+                had_images = bool(gallery_list)
+                gallery_list = []
+                flash("Se eliminaron todas las imágenes del borrador." if had_images else "No había imágenes para eliminar.", "info")
+            else:
+                origin, identifier = _parse_gallery_remove_token(remove_token)
+                removed = False
+                if identifier and origin in {"session", "primary"}:
+                    next_gallery = [fn for fn in gallery_list if fn != identifier]
+                    if len(next_gallery) != len(gallery_list):
+                        gallery_list = next_gallery
+                        removed = True
+                if removed:
+                    flash("Imagen eliminada del borrador.", "success")
+                else:
+                    flash("No se encontró la imagen seleccionada.", "warning")
+            limited_gallery = gallery_list[:MAX_GALLERY_IMAGES]
+            current["gallery_images"] = limited_gallery
+            current["image_filename"] = limited_gallery[0] if limited_gallery else None
+            rows[row_index] = current
+            _set_bulk_preview_rows(rows)
+            return redirect(request.url)
         name = (request.form.get("name") or "").strip()
         if not name:
             flash("El nombre es obligatorio.", "danger")
@@ -920,6 +991,54 @@ def products_admin_preview_edit(row_index):
             "category_id": request.form.get("category_id") or "",
             "brand_id": request.form.get("brand_id") or "",
         }
+        existing_gallery = list(current.get("gallery_images") or [])
+        if not existing_gallery and current.get("image_filename"):
+            existing_gallery.append(current.get("image_filename"))
+        gallery_files = request.files.getlist("gallery_images")
+        gallery_urls = [u.strip() for u in request.form.getlist("gallery_image_urls[]") if u.strip()]
+        added_gallery = 0
+        added_from_urls = 0
+        failed_urls = []
+        slots_left = max(0, MAX_GALLERY_IMAGES - len(existing_gallery))
+        for gallery_file in gallery_files:
+            if slots_left <= 0:
+                break
+            if not gallery_file or not getattr(gallery_file, "filename", None):
+                continue
+            filename = _save_product_image(gallery_file)
+            if not filename:
+                continue
+            existing_gallery.append(filename)
+            slots_left -= 1
+            added_gallery += 1
+        for url_candidate in gallery_urls:
+            if slots_left <= 0:
+                break
+            remote_file = _download_image_from_url(url_candidate)
+            if not remote_file:
+                failed_urls.append(url_candidate)
+                continue
+            filename = _save_product_image(remote_file)
+            if not filename:
+                failed_urls.append(url_candidate)
+                continue
+            existing_gallery.append(filename)
+            slots_left -= 1
+            added_from_urls += 1
+        if gallery_files and added_gallery == 0 and slots_left == 0:
+            flash(f"No se agregaron imágenes de galería: alcanzaste el máximo de {MAX_GALLERY_IMAGES}.", "warning")
+        if gallery_urls and added_from_urls == 0 and slots_left == 0:
+            flash(f"No se pudieron agregar imágenes desde URL porque alcanzaste el máximo de {MAX_GALLERY_IMAGES}.", "warning")
+        if added_from_urls:
+            flash(f"Se agregaron {added_from_urls} imagen(es) desde URL.", "success")
+        if failed_urls:
+            preview = ", ".join(failed_urls[:3])
+            extra = len(failed_urls) - 3
+            suffix = f" y {extra} más" if extra > 0 else ""
+            flash(f"No se pudo subir la imagen desde: {preview}{suffix}", "warning")
+        limited_gallery = existing_gallery[:MAX_GALLERY_IMAGES]
+        updated_row["gallery_images"] = limited_gallery
+        updated_row["image_filename"] = limited_gallery[0] if limited_gallery else current.get("image_filename")
         rows[row_index] = updated_row
         _set_bulk_preview_rows(rows)
         flash("Borrador actualizado.", "success")
@@ -937,6 +1056,10 @@ def products_admin_preview_edit(row_index):
         except (InvalidOperation, AttributeError):
             return None
 
+    gallery_list = list(current.get("gallery_images") or [])
+    if not gallery_list and current.get("image_filename"):
+        gallery_list.append(current.get("image_filename"))
+    gallery_entries = _build_preview_gallery_entries(gallery_list)
     product = SimpleNamespace(
         name=current.get("name", ""),
         sku=current.get("sku") or "",
@@ -946,8 +1069,8 @@ def products_admin_preview_edit(row_index):
         long_desc=None,
         category_id=_coerce_uuid(current.get("category_id")),
         brand_id=_coerce_uuid(current.get("brand_id")),
-        image_filename=None,
-        images=[],
+        image_filename=gallery_list[0] if gallery_list else None,
+        images=gallery_entries,
     )
     roots = _category_roots_with_children()
     brands = Brand.query.order_by(Brand.name).all()
@@ -959,6 +1082,10 @@ def products_admin_preview_edit(row_index):
         form_action=url_for("main.products_admin_preview_edit", row_index=row_index),
         title="Editar borrador en detalle",
         cancel_url=url_for("main.products_admin_list"),
+        max_gallery_images=MAX_GALLERY_IMAGES,
+        gallery_display=gallery_entries,
+        gallery_context="preview",
+        gallery_context_id=row_index,
     )
 
 
@@ -1572,8 +1699,9 @@ def products_admin_new():
                 flash("Precio inválido", "danger")
                 return redirect(url_for("main.products_admin_new"))
 
-        image_file = request.files.get("image")
-        image_filename = _save_product_image(image_file)
+        gallery_files = request.files.getlist("gallery_images")
+        gallery_urls = [u.strip() for u in request.form.getlist("gallery_image_urls[]") if u.strip()]
+
         p = Product(
             name=name,
             sku=sku,
@@ -1583,10 +1711,23 @@ def products_admin_new():
             long_desc=long_desc,
             category_id=category_id,
             brand_id=brand_id,
-            image_filename=image_filename,
+            image_filename=None,
         )
         db.session.add(p)
+        db.session.flush()
+        added_gallery, failed_urls = _append_gallery_images(p, gallery_files, gallery_urls)
+        skipped_gallery = getattr(p, "_skipped_gallery_due_limit", 0)
+        _sync_primary_image_from_gallery(p)
         db.session.commit()
+        if added_gallery:
+            flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
+        if skipped_gallery:
+            flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
+        if failed_urls:
+            preview = ", ".join(failed_urls[:3])
+            extra = len(failed_urls) - 3
+            suffix = f" y {extra} más" if extra > 0 else ""
+            flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
         flash("Producto creado", "success")
         return redirect(url_for("main.products_admin_list"))
 
@@ -1633,6 +1774,9 @@ def products_admin_new():
         product=prefill,
         form_action=url_for("main.products_admin_new"),
         title="Nuevo producto",
+        max_gallery_images=MAX_GALLERY_IMAGES,
+        gallery_context="none",
+        gallery_context_id="",
     )
 
 
@@ -1641,6 +1785,43 @@ def products_admin_new():
 def products_admin_edit(product_id):
     p = Product.query.get_or_404(product_id)
     if request.method == "POST":
+        remove_token = request.form.get("remove_gallery_token")
+        clear_gallery = request.form.get("clear_gallery")
+        if remove_token or clear_gallery:
+            removed_any = False
+            level = "info"
+            message = ""
+            if clear_gallery == "1":
+                removed_any = bool(p.image_filename or p.images)
+                p.image_filename = None
+                for img in list(p.images):
+                    db.session.delete(img)
+                message = "Se eliminaron todas las imágenes de la galería." if removed_any else "El producto no tiene imágenes para eliminar."
+                level = "success" if removed_any else "info"
+            else:
+                origin, identifier = _parse_gallery_remove_token(remove_token)
+                if origin == "gallery" and identifier:
+                    target = next((img for img in list(p.images) if str(img.id) == identifier), None)
+                    if target:
+                        db.session.delete(target)
+                        removed_any = True
+                elif origin == "primary" and identifier:
+                    if p.image_filename == identifier:
+                        p.image_filename = None
+                        removed_any = True
+                    # También quitamos cualquier registro de galería con ese filename por consistencia
+                    for img in list(p.images):
+                        if img.filename == identifier:
+                            db.session.delete(img)
+                            removed_any = True
+                            break
+                message = "Imagen eliminada del producto." if removed_any else "No se encontró la imagen seleccionada."
+                level = "success" if removed_any else "warning"
+            if removed_any:
+                _sync_primary_image_from_gallery(p)
+            db.session.commit()
+            flash(message, level)
+            return redirect(request.url)
         name = (request.form.get("name") or "").strip()
         sku = (request.form.get("sku") or "").strip() or None
         price_raw = (request.form.get("price") or "").strip()
@@ -1664,9 +1845,6 @@ def products_admin_edit(product_id):
                 flash("Precio inválido", "danger")
                 return redirect(url_for("main.products_admin_edit", product_id=p.id))
 
-        # Imagen (si se sube una nueva, reemplaza la anterior)
-        image_file = request.files.get("image")
-        new_image = _save_product_image(image_file)
         p.name = name
         p.sku = sku
         p.price = price
@@ -1675,28 +1853,22 @@ def products_admin_edit(product_id):
         p.long_desc = long_desc
         p.category_id = category_id
         p.brand_id = brand_id
-        if new_image:
-            p.image_filename = new_image
 
         gallery_files = request.files.getlist("gallery_images")
-        if gallery_files:
-            existing_count = len(p.images)
-            if p.image_filename:
-                existing_count += 1
-            next_position = (p.images[-1].position + 1) if p.images else 1
-            for gallery_file in gallery_files:
-                if not gallery_file or not gallery_file.filename:
-                    continue
-                if existing_count >= 10:
-                    break
-                filename = _save_product_image(gallery_file)
-                if not filename:
-                    continue
-                pi = ProductImage(product_id=p.id, filename=filename, position=next_position)
-                db.session.add(pi)
-                existing_count += 1
-                next_position += 1
+        gallery_urls = [u.strip() for u in request.form.getlist("gallery_image_urls[]") if u.strip()]
+        added_gallery, failed_urls = _append_gallery_images(p, gallery_files, gallery_urls)
+        skipped_gallery = getattr(p, "_skipped_gallery_due_limit", 0)
+        _sync_primary_image_from_gallery(p)
         db.session.commit()
+        if added_gallery:
+            flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
+        if skipped_gallery:
+            flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
+        if failed_urls:
+            preview = ", ".join(failed_urls[:3])
+            extra = len(failed_urls) - 3
+            suffix = f" y {extra} más" if extra > 0 else ""
+            flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
         flash("Producto actualizado", "success")
         return redirect(url_for("main.products_admin_list"))
 
@@ -1709,21 +1881,186 @@ def products_admin_edit(product_id):
         product=p,
         form_action=url_for("main.products_admin_edit", product_id=p.id),
         title="Editar producto",
+        max_gallery_images=MAX_GALLERY_IMAGES,
+        gallery_display=_gallery_display_entries(p.image_filename, p.images),
+        gallery_context="product",
+        gallery_context_id=str(p.id),
     )
 
 # --- Helper imagen producto ---
+def _download_image_from_url(image_url):
+    if not image_url:
+        return None
+    url = image_url.strip()
+    if not url or not url.lower().startswith(("http://", "https://")):
+        return None
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=10) as resp:
+            content_type = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
+            if content_type and not content_type.startswith("image/"):
+                current_app.logger.warning("URL %s no es una imagen (%s)", url, content_type)
+                return None
+            data = resp.read(MAX_REMOTE_IMAGE_SIZE + 1)
+            if len(data) > MAX_REMOTE_IMAGE_SIZE:
+                current_app.logger.warning("Imagen en %s supera el límite de %s bytes", url, MAX_REMOTE_IMAGE_SIZE)
+                return None
+    except Exception as exc:
+        current_app.logger.warning("Fallo al descargar imagen desde %s: %s", url, exc)
+        return None
+
+    ext = mimetypes.guess_extension(content_type or "") or os.path.splitext(urlparse(url).path)[1]
+    if ext == ".jpe":
+        ext = ".jpg"
+    if not ext:
+        ext = ".jpg"
+    ext = ext.lower()
+    if ext not in ALLOWED_PRODUCT_IMAGE_EXTENSIONS:
+        current_app.logger.warning("Extensión %s no permitida para %s", ext, url)
+        return None
+
+    stream = BytesIO(data)
+    stream.seek(0)
+    filename = f"remote{ext}"
+    return FileStorage(stream=stream, filename=filename, content_type=content_type or "application/octet-stream")
+
+
 def _save_product_image(file_storage):
     if not file_storage or not file_storage.filename:
         return None
-    allowed = {'.jpg', '.jpeg', '.png', '.webp'}
     ext = os.path.splitext(file_storage.filename)[1].lower()
-    if ext not in allowed:
+    if ext not in ALLOWED_PRODUCT_IMAGE_EXTENSIONS:
         return None
     fname = f"{uuid.uuid4().hex}{ext}"
     dest_dir = _resolved_img_subdir('products')
     os.makedirs(dest_dir, exist_ok=True)
     file_storage.save(os.path.join(dest_dir, fname))
     return fname
+
+
+def _sync_primary_image_from_gallery(product):
+    if not getattr(product, "images", None):
+        return
+    ordered = sorted(
+        (img for img in product.images if getattr(img, "filename", None)),
+        key=lambda img: (img.position or 0),
+    )
+    if ordered:
+        product.image_filename = ordered[0].filename
+
+
+def _append_gallery_images(product, file_list=None, url_list=None):
+    file_list = [f for f in (file_list or []) if f and getattr(f, "filename", None)]
+    url_list = [(u or "").strip() for u in (url_list or []) if (u or "").strip()]
+
+    existing_images = list(product.images)
+    next_position = 1
+    if existing_images:
+        next_position = max((img.position or 0) for img in existing_images) + 1
+
+    current_gallery_count = len(existing_images)
+    slots_left = max(0, MAX_GALLERY_IMAGES - current_gallery_count)
+
+    added = 0
+    failed_urls = []
+    skipped_by_limit = 0
+
+    for gallery_file in file_list:
+        if slots_left <= 0:
+            skipped_by_limit += 1
+            continue
+        filename = _save_product_image(gallery_file)
+        if not filename:
+            continue
+        db.session.add(ProductImage(product_id=product.id, filename=filename, position=next_position))
+        next_position += 1
+        slots_left -= 1
+        added += 1
+
+    for cleaned_url in url_list:
+        if slots_left <= 0:
+            skipped_by_limit += 1
+            continue
+        remote_file = _download_image_from_url(cleaned_url)
+        if not remote_file:
+            failed_urls.append(cleaned_url)
+            continue
+        filename = _save_product_image(remote_file)
+        if not filename:
+            failed_urls.append(cleaned_url)
+            continue
+        db.session.add(ProductImage(product_id=product.id, filename=filename, position=next_position))
+        next_position += 1
+        slots_left -= 1
+        added += 1
+
+    setattr(product, "_added_gallery_count", added)
+    setattr(product, "_skipped_gallery_due_limit", skipped_by_limit)
+    setattr(product, "_remaining_gallery_slots", slots_left)
+
+    return added, failed_urls
+
+
+def _make_gallery_remove_token(origin, identifier):
+    origin = origin or "gallery"
+    identifier = identifier or ""
+    return f"{origin}|{identifier}"
+
+
+def _parse_gallery_remove_token(token):
+    if not token:
+        return None, None
+    if "|" not in token:
+        return token, ""
+    origin, payload = token.split("|", 1)
+    return origin, payload
+
+
+def _build_preview_gallery_entries(filenames):
+    entries = []
+    for fn in filenames:
+        entries.append(
+            SimpleNamespace(
+                filename=fn,
+                origin="session",
+                image_id=None,
+                remove_token=_make_gallery_remove_token("session", fn),
+            )
+        )
+    return entries
+
+
+def _gallery_display_entries(primary_filename, gallery_records):
+    entries = []
+    seen = set()
+    if primary_filename:
+        entries.append(
+            SimpleNamespace(
+                filename=primary_filename,
+                origin="primary",
+                image_id=None,
+                remove_token=_make_gallery_remove_token("primary", primary_filename),
+            )
+        )
+        seen.add(primary_filename)
+    ordered = sorted(
+        (img for img in (gallery_records or []) if getattr(img, "filename", None)),
+        key=lambda img: (img.position or 0),
+    )
+    for img in ordered:
+        fn = img.filename
+        if fn in seen:
+            continue
+        entries.append(
+            SimpleNamespace(
+                filename=fn,
+                origin="gallery",
+                image_id=str(img.id),
+                remove_token=_make_gallery_remove_token("gallery", str(img.id)),
+            )
+        )
+        seen.add(fn)
+    return entries
 
 def _save_slide_image(file_storage):
     if not file_storage or not file_storage.filename:
@@ -1860,3 +2197,86 @@ def slides_admin_bulk():
     else:
         flash("No se cargaron slides (formatos no válidos)", "warning")
     return redirect(url_for("main.slides_admin_list"))
+
+
+@bp.route("/admin/products/gallery-url-upload", methods=["POST"])
+@admin_required
+def products_gallery_url_upload():
+    data = request.get_json(silent=True) or {}
+    raw_url = (data.get("url") or "").strip()
+    if not raw_url:
+        return jsonify(success=False, message="Ingresá una URL válida."), 400
+    context = data.get("context") or ""
+    if context not in {"preview", "product"}:
+        return jsonify(success=False, message="Contexto inválido."), 400
+
+    def _build_thumb_response(filename, remaining, message=None, remove_token=None):
+        img_url = url_for("static", filename=f"img/products/{filename}") if filename else None
+        return jsonify(
+            success=True,
+            image_url=img_url,
+            filename=filename,
+            remaining=max(0, remaining),
+            remove_token=remove_token,
+            message=message or "Imagen agregada desde URL.",
+        ), 200
+
+    if context == "preview":
+        try:
+            row_index = int(data.get("row_index", -1))
+        except (TypeError, ValueError):
+            row_index = -1
+        rows = _get_bulk_preview_rows()
+        if not rows or row_index < 0 or row_index >= len(rows):
+            return jsonify(success=False, message="Borrador no encontrado."), 404
+        row = rows[row_index]
+        gallery = list(row.get("gallery_images") or [])
+        if not gallery and row.get("image_filename"):
+            gallery.append(row.get("image_filename"))
+        if len(gallery) >= MAX_GALLERY_IMAGES:
+            return jsonify(success=False, message=f"Alcanzaste el máximo de {MAX_GALLERY_IMAGES} imágenes."), 400
+        remote_file = _download_image_from_url(raw_url)
+        if not remote_file:
+            return jsonify(success=False, message="No se pudo descargar la imagen desde la URL indicada."), 400
+        filename = _save_product_image(remote_file)
+        if not filename:
+            return jsonify(success=False, message="El archivo descargado no es un formato soportado."), 400
+        gallery.append(filename)
+        gallery = gallery[:MAX_GALLERY_IMAGES]
+        row["gallery_images"] = gallery
+        row["image_filename"] = gallery[0]
+        rows[row_index] = row
+        _set_bulk_preview_rows(rows)
+        remaining = MAX_GALLERY_IMAGES - len(gallery)
+        remove_token = _make_gallery_remove_token("session", filename)
+        return _build_thumb_response(filename, remaining, "Imagen agregada al borrador.", remove_token)
+
+    # context == "product"
+    product_id = data.get("product_id")
+    pid = _coerce_uuid(product_id)
+    if not pid:
+        return jsonify(success=False, message="Producto inválido."), 400
+    product = Product.query.get(pid)
+    if not product:
+        return jsonify(success=False, message="Producto no encontrado."), 404
+    current_count = len(product.images or [])
+    if current_count >= MAX_GALLERY_IMAGES:
+        return jsonify(success=False, message=f"Alcanzaste el máximo de {MAX_GALLERY_IMAGES} imágenes."), 400
+    remote_file = _download_image_from_url(raw_url)
+    if not remote_file:
+        return jsonify(success=False, message="No se pudo descargar la imagen desde la URL indicada."), 400
+    filename = _save_product_image(remote_file)
+    if not filename:
+        return jsonify(success=False, message="El archivo descargado no es un formato soportado."), 400
+    next_position = 1
+    if product.images:
+        next_position = max((img.position or 0) for img in product.images) + 1
+    new_image = ProductImage(product=product, filename=filename, position=next_position)
+    db.session.add(new_image)
+    db.session.flush()
+    if not product.image_filename:
+        product.image_filename = filename
+    remaining = MAX_GALLERY_IMAGES - min(MAX_GALLERY_IMAGES, current_count + 1)
+    db.session.commit()
+    remove_token = _make_gallery_remove_token("gallery", str(new_image.id))
+    return _build_thumb_response(filename, remaining, "Imagen agregada al producto.", remove_token)

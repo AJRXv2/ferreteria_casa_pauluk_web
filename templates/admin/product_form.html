@@ -2,7 +2,16 @@
 {% block content %}
 <h3 class="mb-3">{{ title }}</h3>
 {% set cancel_href = cancel_url or url_for('main.products_admin_list') %}
-<form method="post" action="{{ form_action }}" enctype="multipart/form-data">
+{% set gallery_context = gallery_context or 'none' %}
+{% set gallery_context_id = gallery_context_id or '' %}
+<form
+  id="productForm"
+  method="post"
+  action="{{ form_action }}"
+  enctype="multipart/form-data"
+  data-gallery-url-endpoint="{{ url_for('main.products_gallery_url_upload') }}"
+  data-gallery-context="{{ gallery_context }}"
+  data-gallery-context-id="{{ gallery_context_id }}">
   <div class="row g-3">
     <div class="col-12 col-md-6">
       <label class="form-label">Nombre</label>
@@ -58,28 +67,53 @@
       </div>
     </div>
 
-    <div class="col-12 col-md-6">
-      <label class="form-label">Imagen</label>
-      <input type="file" name="image" accept="image/*" class="form-control">
-      {% if product and product.image_filename %}
-        <div class="form-text">Imagen actual: <code>{{ product.image_filename }}</code></div>
-        <img src="{{ url_for('static', filename='img/products/' + product.image_filename) }}" alt="Imagen" class="img-thumbnail mt-2" style="max-height:140px;">
-      {% endif %}
-    </div>
-
     <div class="col-12">
-      <label class="form-label">Galería (hasta 10 imágenes)</label>
-      <input type="file" name="gallery_images" accept="image/*" multiple class="form-control">
-      {% if product and product.images %}
-        <div class="d-flex flex-wrap gap-2 mt-2">
-          {% for img in product.images %}
-            <div class="border rounded-3 bg-white" style="padding: .2rem;">
-              <img src="{{ url_for('static', filename='img/products/' + img.filename) }}" alt="{{ product.name }}" class="img-fluid" style="max-height: 80px; object-fit: cover;">
-            </div>
-          {% endfor %}
+      {% set gallery_display = gallery_display if gallery_display is defined else (product.images if product and product.images else []) %}
+      {% set gallery_limit = max_gallery_images if max_gallery_images is not none else 10 %}
+      {% set current_gallery = gallery_display|length %}
+      {% set remaining_gallery = gallery_limit - current_gallery %}
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <label class="form-label mb-0">Galería (hasta {{ gallery_limit }} imágenes)</label>
+        {% if gallery_display %}
+          <button type="submit" class="btn btn-outline-danger btn-sm" name="clear_gallery" value="1" id="clearGalleryBtn" data-clear-gallery="true">Quitar todas</button>
+        {% endif %}
+      </div>
+      <div class="form-text text-muted mb-1">La primera imagen de la galería se mostrará como principal del producto.</div>
+      <input type="file" name="gallery_images" accept="image/*" multiple class="form-control" data-gallery-input="true" {% if remaining_gallery <= 0 %}disabled{% endif %}>
+      <div id="galleryPreview" class="gallery-preview-grid d-none mt-2"></div>
+      <div class="form-text{% if remaining_gallery <= 0 %} text-danger{% endif %}">
+        {% if remaining_gallery <= 0 %}
+          Ya alcanzaste el límite de {{ gallery_limit }} imágenes. Eliminá alguna antes de subir nuevas.
+        {% else %}
+          Podés subir hasta {{ remaining_gallery }} imagen{% if remaining_gallery != 1 %}es{% endif %} adicionales (máximo {{ gallery_limit }}).
+        {% endif %}
+      </div>
+        {% set posted_gallery_urls = request.form.getlist('gallery_image_urls[]') if request.method == 'POST' else [] %}
+        <div class="mt-3">
+          <label class="form-label">Cargar imágenes desde URL (hasta {{ gallery_limit }} enlaces)</label>
+          <div class="form-text text-muted mb-2">Pegá enlaces directos a JPG/PNG/WebP. Presioná Enter para intentar la carga inmediata; si la imagen no se detecta se mostrará una advertencia.</div>
+          <div class="gallery-url-grid">
+            {% set url_value = posted_gallery_urls[0] if posted_gallery_urls else '' %}
+            <input type="url" name="gallery_image_urls[]" class="form-control gallery-url-input mb-2" placeholder="https://ejemplo.com/imagen.jpg" value="{{ url_value }}" data-allow-enter="true">
+          </div>
+          <div class="form-text">Las casillas vacías se ignoran automáticamente.</div>
+          <div id="galleryUrlStatus" class="mt-2"></div>
         </div>
-        <div class="form-text">Subí imágenes adicionales para la galería del producto. El sistema mantendrá el orden actual.</div>
-      {% endif %}
+        <div class="d-flex flex-wrap gap-2 mt-3 gallery-thumb-pool{% if not gallery_display %} d-none{% endif %}" id="currentGalleryThumbnails">
+          {% if gallery_display %}
+            {% for img in gallery_display %}
+              <div class="gallery-thumb-card">
+                <div class="ratio ratio-1x1 gallery-thumb-img-wrapper">
+                  <img src="{{ url_for('static', filename='img/products/' + img.filename) }}" alt="{{ product.name }}" class="img-fluid gallery-thumb-img">
+                </div>
+                {% if img.remove_token %}
+                  <button type="submit" class="btn btn-outline-danger btn-sm w-100" name="remove_gallery_token" value="{{ img.remove_token }}" data-gallery-remove="true">Quitar</button>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <div class="form-text" id="currentGalleryHelp">Subí imágenes adicionales para la galería y usá los botones "Quitar" cuando quieras remover alguna. El sistema mantendrá el orden actual (la primera imagen será la principal).</div>
     </div>
 
     <div class="col-12">
@@ -93,9 +127,34 @@
     </div>
   </div>
 
-  <div class="mt-4">
+  <div class="mt-4 d-flex flex-wrap gap-2 align-items-center">
     <a class="btn btn-outline-secondary" href="{{ cancel_href }}">Cancelar</a>
     <button class="btn btn-primary" type="submit">Guardar</button>
+    {% if product and product.id %}
+      <button class="btn btn-outline-danger ms-md-auto" type="submit" formaction="{{ url_for('main.products_admin_delete', product_id=product.id) }}" formmethod="post" formnovalidate data-delete-product="true">Eliminar producto</button>
+    {% endif %}
   </div>
 </form>
+<div class="image-upload-overlay d-none" id="imageUploadOverlay">
+  <div class="overlay-box">
+    <div class="spinner-border text-light" role="status"></div>
+    <p class="mb-0">Subiendo imágenes...</p>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var form = document.getElementById('productForm');
+  if (!form) return;
+  form.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter') return;
+    var tag = ev.target && ev.target.tagName;
+    if (!tag) return;
+    if (tag === 'TEXTAREA') return; // permitir saltos de línea
+    var type = ev.target.getAttribute('type');
+    if (tag === 'BUTTON' && type === 'submit') return;
+    if (tag === 'INPUT' && type === 'submit') return;
+    ev.preventDefault();
+  });
+});
+</script>
 {% endblock %}
