@@ -1783,17 +1783,36 @@ def products_admin_new():
         added_gallery, failed_urls = _append_gallery_images(p, gallery_files, gallery_urls)
         skipped_gallery = getattr(p, "_skipped_gallery_due_limit", 0)
         _sync_primary_image_from_gallery(p)
-        db.session.commit()
-        if added_gallery:
-            flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
-        if skipped_gallery:
-            flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
-        if failed_urls:
-            preview = ", ".join(failed_urls[:3])
-            extra = len(failed_urls) - 3
-            suffix = f" y {extra} más" if extra > 0 else ""
-            flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
-        flash("Producto creado", "success")
+        try:
+            db.session.commit()
+            if added_gallery:
+                flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
+            if skipped_gallery:
+                flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
+            if failed_urls:
+                preview = ", ".join(failed_urls[:3])
+                extra = len(failed_urls) - 3
+                suffix = f" y {extra} más" if extra > 0 else ""
+                flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
+            flash("Producto creado", "success")
+        except IntegrityError as exc:
+            db.session.rollback()
+            detail = ""
+            orig = getattr(exc, "orig", None)
+            if orig is not None:
+                diag = getattr(orig, "diag", None)
+                detail = getattr(diag, "detail", None) or str(orig)
+            else:
+                detail = str(exc)
+            sku_value = None
+            if detail:
+                m = re.search(r"\(sku\)=\(([^)]+)\)", detail, re.IGNORECASE)
+                if m:
+                    sku_value = m.group(1)
+            if sku_value:
+                flash(f"No se pudo crear el producto: el SKU '{sku_value}' ya existe.", "danger")
+            else:
+                flash("No se pudo crear el producto por un conflicto de integridad en la base de datos.", "danger")
         return redirect(url_for("main.products_admin_list"))
 
     roots = _category_roots_with_children()
@@ -1924,17 +1943,36 @@ def products_admin_edit(product_id):
         added_gallery, failed_urls = _append_gallery_images(p, gallery_files, gallery_urls)
         skipped_gallery = getattr(p, "_skipped_gallery_due_limit", 0)
         _sync_primary_image_from_gallery(p)
-        db.session.commit()
-        if added_gallery:
-            flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
-        if skipped_gallery:
-            flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
-        if failed_urls:
-            preview = ", ".join(failed_urls[:3])
-            extra = len(failed_urls) - 3
-            suffix = f" y {extra} más" if extra > 0 else ""
-            flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
-        flash("Producto actualizado", "success")
+        try:
+            db.session.commit()
+            if added_gallery:
+                flash(f"Se agregaron {added_gallery} imagen(es) a la galería.", "info")
+            if skipped_gallery:
+                flash(f"Se alcanzó el máximo de {MAX_GALLERY_IMAGES} imágenes de galería. {skipped_gallery} archivo(s) no se cargaron.", "warning")
+            if failed_urls:
+                preview = ", ".join(failed_urls[:3])
+                extra = len(failed_urls) - 3
+                suffix = f" y {extra} más" if extra > 0 else ""
+                flash(f"No se pudieron importar estas URL: {preview}{suffix}.", "warning")
+            flash("Producto actualizado", "success")
+        except IntegrityError as exc:
+            db.session.rollback()
+            detail = ""
+            orig = getattr(exc, "orig", None)
+            if orig is not None:
+                diag = getattr(orig, "diag", None)
+                detail = getattr(diag, "detail", None) or str(orig)
+            else:
+                detail = str(exc)
+            sku_value = None
+            if detail:
+                m = re.search(r"\(sku\)=\(([^)]+)\)", detail, re.IGNORECASE)
+                if m:
+                    sku_value = m.group(1)
+            if sku_value:
+                flash(f"No se pudo actualizar el producto: el SKU '{sku_value}' ya existe.", "danger")
+            else:
+                flash("No se pudo actualizar el producto por un conflicto de integridad en la base de datos.", "danger")
         return redirect(url_for("main.products_admin_list"))
 
     roots = _category_roots_with_children()
