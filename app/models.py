@@ -22,7 +22,7 @@ class Product(db.Model):
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = db.Column(db.String(200), nullable=False)
-    sku = db.Column(db.String(64), unique=True, nullable=True)
+    sku = db.Column(db.String(64), nullable=True)
     price = db.Column(db.Numeric(12, 2), nullable=True)
     in_stock = db.Column(db.Boolean, nullable=False, default=True)
     featured = db.Column(db.Boolean, nullable=False, default=False)
