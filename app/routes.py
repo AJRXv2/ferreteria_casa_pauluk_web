@@ -577,6 +577,23 @@ def admin_required(f):
     return wrapper
 
 
+def _unique_category_slug(slug_base: str, exclude_id=None) -> str:
+    """Return a slug unique across categories. If exclude_id is provided,
+    that category is ignored (useful when editing).
+    """
+    slug = slug_base
+    i = 1
+    while True:
+        q = Category.query.filter_by(slug=slug)
+        if exclude_id is not None:
+            q = q.filter(Category.id != exclude_id)
+        exists = q.first() is not None
+        if not exists:
+            return slug
+        slug = f"{slug_base}-{i}"
+        i += 1
+
+
 # --- Categorías (CRUD) ---
 @bp.route("/admin/categories")
 @admin_required
