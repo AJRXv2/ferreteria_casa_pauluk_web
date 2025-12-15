@@ -39,8 +39,10 @@
       {% endif %}
     </p>
     <div class="d-flex align-items-center gap-3">
-      {% if product.price %}
+      {% if product.price is not none %}
         <span class="product-price d-block fs-1 fw-bold text-dark">{{ product.price|ar_currency }}</span>
+      {% else %}
+        <span class="product-price d-block fs-1 fw-bold text-dark">Sin precio / Consultar precio</span>
       {% endif %}
       <span class="badge {% if product.in_stock %}bg-success{% else %}bg-danger{% endif %} fs-6">{% if product.in_stock %}En stock{% else %}Sin stock{% endif %}</span>
     </div>
