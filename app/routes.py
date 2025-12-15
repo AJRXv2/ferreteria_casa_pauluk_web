@@ -597,10 +597,15 @@ def categories_admin_new():
             flash("El nombre es obligatorio", "danger")
             return redirect(url_for("main.categories_admin_new"))
         slug = slugify(name)
+        slug = _unique_category_slug(slug)
         cat = Category(name=name, slug=slug, parent_id=parent_id)
         db.session.add(cat)
-        db.session.commit()
-        flash("Categoría creada", "success")
+        try:
+            db.session.commit()
+            flash("Categoría creada", "success")
+        except Exception:
+            db.session.rollback()
+            flash("No se pudo crear la categoría (slug duplicado).", "danger")
         return redirect(url_for("main.categories_admin_list"))
     roots = Category.query.filter_by(parent_id=None).order_by(Category.name).all()
     return render_template(
@@ -636,10 +641,15 @@ def categories_admin_edit(category_id):
             except Exception:
                 pass
         cat.name = name
-        cat.slug = slugify(name)
+        base_slug = slugify(name)
+        cat.slug = _unique_category_slug(base_slug, exclude_id=cat.id)
         cat.parent_id = parent_id
-        db.session.commit()
-        flash("Categoría actualizada", "success")
+        try:
+            db.session.commit()
+            flash("Categoría actualizada", "success")
+        except Exception:
+            db.session.rollback()
+            flash("No se pudo actualizar la categoría (slug duplicado).", "danger")
         return redirect(url_for("main.categories_admin_list"))
     roots = Category.query.filter_by(parent_id=None).order_by(Category.name).all()
     return render_template(
