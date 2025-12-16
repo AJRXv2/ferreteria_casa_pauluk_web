@@ -177,15 +177,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch(_) {}
     
       const productUrl = card.getAttribute('data-product-url');
-      const hasPrice = card.getAttribute('data-product-has-price');
       const interactive = e.target.closest('a, button, input, textarea, select, label, form');
       if (productUrl && !interactive) {
-        if (hasPrice === '0') {
-          // Producto sin precio: informar al usuario en vez de navegar
-          // Usamos alert simple para compatibilidad; se puede sustituir por modal.
-          alert('Sin precio / Consultar precio');
-          return;
-        }
         window.location.href = productUrl;
       }
   });
