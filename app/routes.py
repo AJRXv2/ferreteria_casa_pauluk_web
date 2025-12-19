@@ -2066,14 +2066,13 @@ def _save_product_image(file_storage):
 
 
 def _sync_primary_image_from_gallery(product):
-    if not getattr(product, "images", None):
+    # Ensure primary image reflects current gallery state.
+    imgs = [img for img in (getattr(product, "images", []) or []) if getattr(img, "filename", None)]
+    if not imgs:
+        product.image_filename = None
         return
-    ordered = sorted(
-        (img for img in product.images if getattr(img, "filename", None)),
-        key=lambda img: (img.position or 0),
-    )
-    if ordered:
-        product.image_filename = ordered[0].filename
+    ordered = sorted(imgs, key=lambda img: (img.position or 0))
+    product.image_filename = ordered[0].filename
 
 
 def _append_gallery_images(product, file_list=None, url_list=None):
