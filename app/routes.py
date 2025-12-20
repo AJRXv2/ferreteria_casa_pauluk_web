@@ -1892,6 +1892,13 @@ def api_products_by_ids():
     if not uuids:
         return {"items": []}
     items = Product.query.filter(Product.id.in_(uuids)).all()
+    items_map = {str(p.id): p for p in items}
+    ordered = []
+    for u in uuids:
+        key = str(u)
+        if key in items_map:
+            ordered.append(items_map[key])
+
     def serialize(p: Product):
         return {
             "id": str(p.id),
@@ -1901,7 +1908,8 @@ def api_products_by_ids():
             "image": p.image_filename,
             "featured": p.featured,
         }
-    return {"items": [serialize(p) for p in items]}
+
+    return {"items": [serialize(p) for p in ordered]}
 
 def _send_consulta_email(dest: str, nombre: str, email: str, telefono: str | None, consulta: str, attachments: list[str] | None = None) -> bool:
     """Envía la consulta por SMTP. Devuelve True si se envió, False si falló."""
