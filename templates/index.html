@@ -143,6 +143,41 @@
   </button>
 </div>
 
+{# Homepage categories selected by admin - render after featured/latest so they appear below #}
+{% if homepage_categories and homepage_categories|length > 0 %}
+  {% for hc in homepage_categories %}
+    <div class="mb-3 d-flex justify-content-between align-items-baseline">
+      <h2 class="mb-0">{{ hc.category.name }}</h2>
+      <a class="small text-muted" href="{{ url_for('main.category_page', slug=hc.category.slug) }}">Ver todos</a>
+    </div>
+    <div class="row g-3 mb-4">
+      {% for p in hc.products %}
+        <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+          <div class="card h-100 border-0 shadow-sm hoverable" data-product-id="{{ p.id }}" data-product-url="{{ url_for('main.product_detail', product_id=p.id) }}" data-product-has-price="{% if p.price is not none %}1{% else %}0{% endif %}">
+            <div class="ratio ratio-4x3 bg-light">
+              {% if p.image_filename %}
+                <img src="{{ url_for('static', filename='img/products/' + p.image_filename) }}" alt="{{ p.name }}" class="w-100 h-100" style="object-fit: cover;" loading="lazy">
+              {% else %}
+                <div class="d-flex align-items-center justify-content-center w-100 h-100 text-muted">
+                  <i class="bi bi-tools" style="font-size: 2rem;"></i>
+                </div>
+              {% endif %}
+            </div>
+            <div class="card-body py-2">
+              <h6 class="card-title mb-1 text-truncate">{{ p.name }}</h6>
+              {% if p.price %}
+                <div class="fw-semibold">{{ p.price|ar_currency }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <p class="text-muted">No hay productos en esta categoría.</p>
+      {% endfor %}
+    </div>
+  {% endfor %}
+{% endif %}
+
 <div class="site-info-panel mt-5 mb-4 p-4 rounded-4 shadow-lg">
   <div class="row g-4 align-items-center">
     <div class="col-12 col-lg-4 text-center">

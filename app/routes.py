@@ -19,7 +19,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.datastructures import FileStorage
 from .models import Category, Product, User, Brand, SiteInfo, Slide, Consulta, ProductImage
 from sqlalchemy.exc import ProgrammingError, OperationalError, IntegrityError
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from . import db, slugify
 
 bp = Blueprint("main", __name__)
@@ -53,6 +53,33 @@ def _coerce_uuid(value):
         return None
 
 
+# Helpers for homepage categories (stored in data/homepage_categories.json)
+def _homepage_categories_path():
+    project_root = os.path.abspath(os.path.join(current_app.root_path, os.pardir))
+    data_dir = os.path.join(project_root, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, "homepage_categories.json")
+
+
+def _load_homepage_categories():
+    path = _homepage_categories_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return [str(x) for x in data][:10]
+    except Exception:
+        return []
+    return []
+
+
+def _save_homepage_categories(slugs):
+    path = _homepage_categories_path()
+    slugs = list(dict.fromkeys([s for s in (slugs or []) if s]))[:10]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(slugs, f, ensure_ascii=False, indent=2)
+
+
 @bp.route("/")
 def index():
     categories = Category.query.order_by(Category.name).all()
@@ -74,7 +101,36 @@ def index():
         .limit(15)
         .all()
     )
-    return render_template("index.html", categories=categories, products=products, featured_products=featured_products, site_info=site_info, slides=slides)
+    # Load homepage categories selection and pick random products per category
+    homepage_slugs = _load_homepage_categories()
+    homepage_categories = []
+    if homepage_slugs:
+        for slug in homepage_slugs[:10]:
+            cat = Category.query.filter_by(slug=slug).first()
+            if not cat:
+                continue
+            # include descendant ids
+            try:
+                ids = _collect_category_ids(cat)
+            except Exception:
+                ids = [cat.id]
+            prods = (
+                Product.query.filter(Product.category_id.in_(ids))
+                .order_by(func.random())
+                .limit(10)
+                .all()
+            )
+            homepage_categories.append({"category": cat, "products": prods})
+
+    return render_template(
+        "index.html",
+        categories=categories,
+        products=products,
+        featured_products=featured_products,
+        site_info=site_info,
+        slides=slides,
+        homepage_categories=homepage_categories,
+    )
 
 
 @bp.route("/logoferreteria.png")
@@ -706,6 +762,33 @@ def admin_db():
     return render_template("admin/db_management.html")
 
 
+@bp.route("/admin/homepage-categories", methods=["GET", "POST"])
+@admin_required
+def admin_homepage_categories():
+    if request.method == "POST":
+        slugs = request.form.getlist("slugs")
+        # ensure max 10
+        if len(slugs) > 10:
+            flash("Podés seleccionar hasta 10 categorías.", "warning")
+            slugs = slugs[:10]
+        # validate slugs exist
+        valid = []
+        for s in slugs:
+            if Category.query.filter_by(slug=s).first():
+                valid.append(s)
+        _save_homepage_categories(valid)
+        flash("Selección guardada.", "success")
+        return redirect(url_for("main.admin_homepage_categories"))
+    # GET: list categories with counts
+    cats = Category.query.order_by(Category.name).all()
+    rows = []
+    for c in cats:
+        count = Product.query.filter_by(category_id=c.id).count()
+        rows.append(SimpleNamespace(id=str(c.id), name=c.name, slug=c.slug, count=count))
+    selected = _load_homepage_categories()
+    return render_template("admin/homepage_categories.html", categories=rows, selected=selected)
+
+
 @bp.route("/admin/db/export")
 @admin_required
 def admin_db_export():
@@ -834,49 +917,93 @@ def admin_db_import():
                         with zf.open(member) as srcf, open(outpath, "wb") as outf:
                             outf.write(srcf.read())
             # Import categories (create or update without parent)
-            id_map = {}
+            cat_id_map = {}
             cats = dump.get("categories", [])
             for c in cats:
                 try:
-                    cid = _coerce_uuid(c.get("id"))
-                    cat = Category.query.get(cid)
+                    cid_in = _coerce_uuid(c.get("id"))
+                    cat = Category.query.get(cid_in)
                     if cat:
+                        # update existing by id
                         cat.name = c.get("name")
-                        cat.slug = c.get("slug")
+                        # if slug conflicts with another row, ensure uniqueness
+                        desired_slug = c.get("slug") or slugify(c.get("name") or "")
+                        if Category.query.filter(Category.slug == desired_slug, Category.id != cat.id).first():
+                            desired_slug = _unique_category_slug(desired_slug)
+                        cat.slug = desired_slug
                         results["updated"] += 1
+                        actual_id = cat.id
                     else:
-                        cat = Category(id=cid, name=c.get("name"), slug=c.get("slug"))
-                        db.session.add(cat)
-                        results["created"] += 1
-                    id_map[str(cid)] = cat
+                        # check if slug already exists for a different category
+                        desired_slug = c.get("slug") or slugify(c.get("name") or "")
+                        existing_by_slug = Category.query.filter_by(slug=desired_slug).first()
+                        if existing_by_slug:
+                            # map incoming id to existing category
+                            cat = existing_by_slug
+                            # optionally update name
+                            cat.name = c.get("name") or cat.name
+                            results["updated"] += 1
+                            actual_id = cat.id
+                        else:
+                            # create new category with incoming id
+                            # ensure slug is unique
+                            unique_slug = _unique_category_slug(desired_slug)
+                            cat = Category(id=cid_in, name=c.get("name"), slug=unique_slug)
+                            db.session.add(cat)
+                            results["created"] += 1
+                            actual_id = cid_in
+                    cat_id_map[str(cid_in)] = str(actual_id)
                 except Exception as ex:
+                    db.session.rollback()
                     results["errors"].append(f"category {c.get('id')}: {ex}")
             db.session.commit()
-            # Second pass to set parent_id
+            # Second pass to set parent_id (use mapped ids)
             for c in cats:
-                cid = _coerce_uuid(c.get("id"))
-                parent_id = _coerce_uuid(c.get("parent_id"))
-                cat = Category.query.get(cid)
-                if cat:
-                    cat.parent_id = parent_id
+                try:
+                    cid_in = c.get("id")
+                    mapped_id = cat_id_map.get(str(cid_in))
+                    parent_in = c.get("parent_id")
+                    mapped_parent = cat_id_map.get(str(parent_in)) if parent_in else None
+                    if mapped_id:
+                        cat = Category.query.get(_coerce_uuid(mapped_id))
+                        if cat:
+                            cat.parent_id = _coerce_uuid(mapped_parent) if mapped_parent else None
+                except Exception as ex:
+                    results["errors"].append(f"category-parent {c.get('id')}: {ex}")
             db.session.commit()
 
             # Brands
+            brand_id_map = {}
             brands = dump.get("brands", [])
             for b in brands:
                 try:
-                    bid = _coerce_uuid(b.get("id"))
-                    brand = Brand.query.get(bid)
+                    bid_in = _coerce_uuid(b.get("id"))
+                    brand = Brand.query.get(bid_in)
                     if brand:
                         brand.name = b.get("name")
-                        brand.slug = b.get("slug")
+                        desired_slug = b.get("slug") or slugify(b.get("name") or "")
+                        if Brand.query.filter(Brand.slug == desired_slug, Brand.id != brand.id).first():
+                            desired_slug = f"{desired_slug}-{str(bid_in)[:8]}"
+                        brand.slug = desired_slug
                         brand.visible = bool(b.get("visible"))
                         results["updated"] += 1
+                        actual_bid = brand.id
                     else:
-                        brand = Brand(id=bid, name=b.get("name"), slug=b.get("slug"), visible=bool(b.get("visible", True)))
-                        db.session.add(brand)
-                        results["created"] += 1
+                        desired_slug = b.get("slug") or slugify(b.get("name") or "")
+                        existing_brand = Brand.query.filter_by(slug=desired_slug).first()
+                        if existing_brand:
+                            brand = existing_brand
+                            brand.name = b.get("name") or brand.name
+                            results["updated"] += 1
+                            actual_bid = brand.id
+                        else:
+                            brand = Brand(id=bid_in, name=b.get("name"), slug=desired_slug, visible=bool(b.get("visible", True)))
+                            db.session.add(brand)
+                            results["created"] += 1
+                            actual_bid = bid_in
+                    brand_id_map[str(bid_in)] = str(actual_bid)
                 except Exception as ex:
+                    db.session.rollback()
                     results["errors"].append(f"brand {b.get('id')}: {ex}")
             db.session.commit()
 
@@ -886,6 +1013,11 @@ def admin_db_import():
                 try:
                     pid = _coerce_uuid(p.get("id"))
                     prod = Product.query.get(pid)
+                    # map category and brand ids via maps
+                    cat_in = p.get("category_id")
+                    brand_in = p.get("brand_id")
+                    mapped_cat = _coerce_uuid(cat_id_map.get(str(cat_in))) if cat_in and cat_id_map.get(str(cat_in)) else _coerce_uuid(cat_in)
+                    mapped_brand = _coerce_uuid(brand_id_map.get(str(brand_in))) if brand_in and brand_id_map.get(str(brand_in)) else _coerce_uuid(brand_in)
                     if prod:
                         prod.name = p.get("name")
                         prod.sku = p.get("sku")
@@ -895,14 +1027,15 @@ def admin_db_import():
                         prod.short_desc = p.get("short_desc")
                         prod.long_desc = p.get("long_desc")
                         prod.image_filename = p.get("image_filename")
-                        prod.category_id = _coerce_uuid(p.get("category_id"))
-                        prod.brand_id = _coerce_uuid(p.get("brand_id"))
+                        prod.category_id = mapped_cat
+                        prod.brand_id = mapped_brand
                         results["updated"] += 1
                     else:
-                        prod = Product(id=pid, name=p.get("name"), sku=p.get("sku"), price=p.get("price"), in_stock=bool(p.get("in_stock", True)), featured=bool(p.get("featured", False)), short_desc=p.get("short_desc"), long_desc=p.get("long_desc"), image_filename=p.get("image_filename"), category_id=_coerce_uuid(p.get("category_id")), brand_id=_coerce_uuid(p.get("brand_id")))
+                        prod = Product(id=pid, name=p.get("name"), sku=p.get("sku"), price=p.get("price"), in_stock=bool(p.get("in_stock", True)), featured=bool(p.get("featured", False)), short_desc=p.get("short_desc"), long_desc=p.get("long_desc"), image_filename=p.get("image_filename"), category_id=mapped_cat, brand_id=mapped_brand)
                         db.session.add(prod)
                         results["created"] += 1
                 except Exception as ex:
+                    db.session.rollback()
                     results["errors"].append(f"product {p.get('id')}: {ex}")
             db.session.commit()
 

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Categorías de la página principal</h3>
+  <a class="btn btn-secondary" href="{{ url_for('main.admin_home') }}">Volver</a>
+</div>
+<form method="post" action="{{ url_for('main.admin_homepage_categories') }}">
+  <div class="card mb-3">
+    <div class="card-body">
+      <p class="small text-muted">Selecciona hasta 10 categorías. Los productos mostrados serán elegidos aleatoriamente al cargar la portada.</p>
+      <div class="row g-2">
+        {% for c in categories %}
+        <div class="col-12 col-sm-6 col-md-4">
+          <label class="form-check card p-2">
+            <input class="form-check-input me-2" type="checkbox" name="slugs" value="{{ c.slug }}" {% if c.slug in selected %}checked{% endif %}>
+            <div>
+              <strong class="d-block">{{ c.name }}</strong>
+              <small class="text-muted">{{ c.slug }} — {{ c.count }} productos</small>
+            </div>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="card-footer text-end">
+      <button class="btn btn-primary" type="submit">Guardar selección</button>
+    </div>
+  </div>
+</form>
+{% endblock %}
