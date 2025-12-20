@@ -11,6 +11,9 @@ from io import BytesIO
 from types import SimpleNamespace
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+import zipfile
+import tempfile
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, current_app, abort, Response, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.datastructures import FileStorage
@@ -565,6 +568,7 @@ def admin_home():
     return render_template("admin_home.html")
 
 
+
 # --- Helpers ---
 def admin_required(f):
     @wraps(f)
@@ -692,6 +696,284 @@ def categories_admin_delete(category_id):
     db.session.commit()
     flash("Categoría eliminada", "success")
     return redirect(url_for("main.categories_admin_list"))
+
+
+# --- Admin DB management (export/import) ---
+@bp.route("/admin/db")
+@admin_required
+def admin_db():
+    """Admin panel for DB export/import."""
+    return render_template("admin/db_management.html")
+
+
+@bp.route("/admin/db/export")
+@admin_required
+def admin_db_export():
+    # Build dump
+    dump = {}
+    # Categories
+    cats = Category.query.order_by(Category.created_at).all()
+    dump["categories"] = [
+        {
+            "id": str(c.id),
+            "name": c.name,
+            "slug": c.slug,
+            "parent_id": str(c.parent_id) if c.parent_id else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in cats
+    ]
+    # Brands
+    brands = Brand.query.order_by(Brand.created_at).all()
+    dump["brands"] = [
+        {"id": str(b.id), "name": b.name, "slug": b.slug, "visible": b.visible, "created_at": b.created_at.isoformat() if b.created_at else None}
+        for b in brands
+    ]
+    # Products
+    prods = Product.query.order_by(Product.created_at).all()
+    def dec_to_str(v):
+        try:
+            return str(v) if v is not None else None
+        except Exception:
+            return None
+
+    dump["products"] = [
+        {
+            "id": str(p.id),
+            "name": p.name,
+            "sku": p.sku,
+            "price": dec_to_str(p.price),
+            "in_stock": bool(p.in_stock),
+            "featured": bool(p.featured),
+            "short_desc": p.short_desc,
+            "long_desc": p.long_desc,
+            "image_filename": p.image_filename,
+            "category_id": str(p.category_id) if p.category_id else None,
+            "brand_id": str(p.brand_id) if p.brand_id else None,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+        }
+        for p in prods
+    ]
+    # Product images
+    imgs = ProductImage.query.order_by(ProductImage.created_at).all()
+    dump["product_images"] = [
+        {"id": str(i.id), "product_id": str(i.product_id), "filename": i.filename, "position": i.position, "created_at": i.created_at.isoformat() if i.created_at else None}
+        for i in imgs
+    ]
+    # Slides
+    slides = Slide.query.order_by(Slide.order.asc()).all()
+    dump["slides"] = [
+        {"id": str(s.id), "image_filename": s.image_filename, "order": s.order, "visible": s.visible}
+        for s in slides
+    ]
+    # Site info (single)
+    si = SiteInfo.query.first()
+    dump["site_info"] = None
+    if si:
+        dump["site_info"] = {"id": str(si.id), "store_name": si.store_name, "address": si.address, "hours": si.hours, "email": si.email, "phone": si.phone, "instagram": si.instagram, "whatsapp": si.whatsapp, "consultas_enabled": bool(si.consultas_enabled)}
+
+    # Collect image filenames to package
+    image_files = set()
+    for p in dump.get("products", []):
+        if p.get("image_filename"):
+            image_files.add(("products", p["image_filename"]))
+    for pi in dump.get("product_images", []):
+        if pi.get("filename"):
+            image_files.add(("products", pi["filename"]))
+    for s in dump.get("slides", []):
+        if s.get("image_filename"):
+            image_files.add(("slides", s["image_filename"]))
+
+    # Create zip in memory
+    bio = BytesIO()
+    with zipfile.ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # dump.json
+        zf.writestr("dump.json", json.dumps(dump, ensure_ascii=False, indent=2))
+        # images
+        for folder, fname in image_files:
+            # try standard paths
+            src = os.path.join(current_app.static_folder, "img", folder, fname)
+            if os.path.exists(src):
+                arcname = os.path.join("images", folder, fname)
+                zf.write(src, arcname)
+    bio.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    filename = f"ferreteria_export_{ts}.zip"
+    return Response(bio.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@bp.route("/admin/db/import", methods=["POST"]) 
+@admin_required
+def admin_db_import():
+    f = request.files.get("dump_file")
+    if not f:
+        flash("No file uploaded", "danger")
+        return redirect(url_for("main.admin_db"))
+    # Save to temp
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    try:
+        f.save(tmp.name)
+        results = {"created": 0, "updated": 0, "errors": []}
+        with zipfile.ZipFile(tmp.name, "r") as zf:
+            if "dump.json" not in zf.namelist():
+                flash("El archivo no contiene dump.json", "danger")
+                return redirect(url_for("main.admin_db"))
+            dump = json.loads(zf.read("dump.json").decode("utf-8"))
+            # Extract images to static folder
+            for member in zf.namelist():
+                if member.startswith("images/"):
+                    parts = member.split('/')
+                    # images/<folder>/<filename>
+                    if len(parts) >= 3:
+                        folder = parts[1]
+                        fname = '/'.join(parts[2:])
+                        outdir = os.path.join(current_app.static_folder, "img", folder)
+                        os.makedirs(outdir, exist_ok=True)
+                        outpath = os.path.join(outdir, fname)
+                        with zf.open(member) as srcf, open(outpath, "wb") as outf:
+                            outf.write(srcf.read())
+            # Import categories (create or update without parent)
+            id_map = {}
+            cats = dump.get("categories", [])
+            for c in cats:
+                try:
+                    cid = _coerce_uuid(c.get("id"))
+                    cat = Category.query.get(cid)
+                    if cat:
+                        cat.name = c.get("name")
+                        cat.slug = c.get("slug")
+                        results["updated"] += 1
+                    else:
+                        cat = Category(id=cid, name=c.get("name"), slug=c.get("slug"))
+                        db.session.add(cat)
+                        results["created"] += 1
+                    id_map[str(cid)] = cat
+                except Exception as ex:
+                    results["errors"].append(f"category {c.get('id')}: {ex}")
+            db.session.commit()
+            # Second pass to set parent_id
+            for c in cats:
+                cid = _coerce_uuid(c.get("id"))
+                parent_id = _coerce_uuid(c.get("parent_id"))
+                cat = Category.query.get(cid)
+                if cat:
+                    cat.parent_id = parent_id
+            db.session.commit()
+
+            # Brands
+            brands = dump.get("brands", [])
+            for b in brands:
+                try:
+                    bid = _coerce_uuid(b.get("id"))
+                    brand = Brand.query.get(bid)
+                    if brand:
+                        brand.name = b.get("name")
+                        brand.slug = b.get("slug")
+                        brand.visible = bool(b.get("visible"))
+                        results["updated"] += 1
+                    else:
+                        brand = Brand(id=bid, name=b.get("name"), slug=b.get("slug"), visible=bool(b.get("visible", True)))
+                        db.session.add(brand)
+                        results["created"] += 1
+                except Exception as ex:
+                    results["errors"].append(f"brand {b.get('id')}: {ex}")
+            db.session.commit()
+
+            # Products
+            products = dump.get("products", [])
+            for p in products:
+                try:
+                    pid = _coerce_uuid(p.get("id"))
+                    prod = Product.query.get(pid)
+                    if prod:
+                        prod.name = p.get("name")
+                        prod.sku = p.get("sku")
+                        prod.price = p.get("price")
+                        prod.in_stock = bool(p.get("in_stock"))
+                        prod.featured = bool(p.get("featured"))
+                        prod.short_desc = p.get("short_desc")
+                        prod.long_desc = p.get("long_desc")
+                        prod.image_filename = p.get("image_filename")
+                        prod.category_id = _coerce_uuid(p.get("category_id"))
+                        prod.brand_id = _coerce_uuid(p.get("brand_id"))
+                        results["updated"] += 1
+                    else:
+                        prod = Product(id=pid, name=p.get("name"), sku=p.get("sku"), price=p.get("price"), in_stock=bool(p.get("in_stock", True)), featured=bool(p.get("featured", False)), short_desc=p.get("short_desc"), long_desc=p.get("long_desc"), image_filename=p.get("image_filename"), category_id=_coerce_uuid(p.get("category_id")), brand_id=_coerce_uuid(p.get("brand_id")))
+                        db.session.add(prod)
+                        results["created"] += 1
+                except Exception as ex:
+                    results["errors"].append(f"product {p.get('id')}: {ex}")
+            db.session.commit()
+
+            # Product images
+            pim = dump.get("product_images", [])
+            for i in pim:
+                try:
+                    iid = _coerce_uuid(i.get("id"))
+                    pi = ProductImage.query.get(iid)
+                    if pi:
+                        pi.product_id = _coerce_uuid(i.get("product_id"))
+                        pi.filename = i.get("filename")
+                        pi.position = int(i.get("position") or 0)
+                        results["updated"] += 1
+                    else:
+                        pi = ProductImage(id=iid, product_id=_coerce_uuid(i.get("product_id")), filename=i.get("filename"), position=int(i.get("position") or 0))
+                        db.session.add(pi)
+                        results["created"] += 1
+                except Exception as ex:
+                    results["errors"].append(f"product_image {i.get('id')}: {ex}")
+            db.session.commit()
+
+            # Slides
+            sls = dump.get("slides", [])
+            for s in sls:
+                try:
+                    sid = _coerce_uuid(s.get("id"))
+                    slide = Slide.query.get(sid)
+                    if slide:
+                        slide.image_filename = s.get("image_filename")
+                        slide.order = int(s.get("order") or 0)
+                        slide.visible = bool(s.get("visible"))
+                        results["updated"] += 1
+                    else:
+                        slide = Slide(id=sid, image_filename=s.get("image_filename"), order=int(s.get("order") or 0), visible=bool(s.get("visible", True)))
+                        db.session.add(slide)
+                        results["created"] += 1
+                except Exception as ex:
+                    results["errors"].append(f"slide {s.get('id')}: {ex}")
+            db.session.commit()
+
+            # Site info
+            si = dump.get("site_info")
+            if si:
+                try:
+                    existing = SiteInfo.query.first()
+                    if existing:
+                        existing.store_name = si.get("store_name")
+                        existing.address = si.get("address")
+                        existing.hours = si.get("hours")
+                        existing.email = si.get("email")
+                        existing.phone = si.get("phone")
+                        existing.instagram = si.get("instagram")
+                        existing.whatsapp = si.get("whatsapp")
+                        existing.consultas_enabled = bool(si.get("consultas_enabled", True))
+                        results["updated"] += 1
+                    else:
+                        newsi = SiteInfo(id=_coerce_uuid(si.get("id")), store_name=si.get("store_name"), address=si.get("address") or "", hours=si.get("hours") or "", email=si.get("email"), phone=si.get("phone"), instagram=si.get("instagram"), whatsapp=si.get("whatsapp"), consultas_enabled=bool(si.get("consultas_enabled", True)))
+                        db.session.add(newsi)
+                        results["created"] += 1
+                except Exception as ex:
+                    results["errors"].append(f"site_info: {ex}")
+            db.session.commit()
+
+        flash(f"Import terminado: {results['created']} creados, {results['updated']} actualizados. Errores: {len(results['errors'])}", "success" if not results['errors'] else "warning")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+    return redirect(url_for("main.admin_db"))
 
 
 # --- Productos (CRUD) ---

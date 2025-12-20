@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h3>Gestión de la Base de Datos</h3>
+  <a class="btn btn-secondary" href="{{ url_for('main.admin_home') }}">Volver</a>
+</div>
+<div class="row g-3">
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Exportar base de datos</h5>
+        <p class="card-text">Descarga un archivo ZIP que contiene un `dump.json` con productos, categorías, marcas y metadatos, y un directorio `images/` con las imágenes referenciadas.</p>
+        <a class="btn btn-primary" href="{{ url_for('main.admin_db_export') }}">Descargar export</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Importar base de datos</h5>
+        <p class="card-text">Sube un ZIP generado por la exportación para importar productos, categorías, imágenes y demás datos. Se aplicará un upsert básico: intenta actualizar filas existentes y crea las que faltan.</p>
+        <form action="{{ url_for('main.admin_db_import') }}" method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="dump_file" class="form-label">Archivo ZIP</label>
+            <input class="form-control" type="file" name="dump_file" id="dump_file" accept=".zip" required>
+          </div>
+          <button class="btn btn-outline-primary" type="submit">Importar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
