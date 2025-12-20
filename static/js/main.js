@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!pid) return;
     try {
       const KEY = 'recent_products_v1';
-      if (ev.target && ev.target.dataset && ev.target.dataset.allowEnter === 'true') return;
+      if (e.target && e.target.dataset && e.target.dataset.allowEnter === 'true') return;
       let arr = JSON.parse(localStorage.getItem(KEY) || '[]');
       arr = arr.filter(id => id !== pid); // quitar duplicados
       arr.unshift(pid); // agregar al inicio
